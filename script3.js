@@ -20,73 +20,71 @@ function startVideo() {
 }
 
 video.addEventListener('play', () => {
-  const W = video.videoWidth
-  const H = video.videoHeight
-
-  // onscreen canvas
   const canvas = faceapi.createCanvasFromMedia(video)
-  canvas.width = W
-  canvas.height = H
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
 
-  // offscreen for grabbing raw pixels
-  const off = document.createElement('canvas')
-  off.width  = W
-  off.height = H
-  const offCtx = off.getContext('2d')
+  // offscreen canvas for pixel sampling
+  const offCanvas = document.createElement('canvas')
+  offCanvas.width = video.width
+  offCanvas.height = video.height
+  const offCtx = offCanvas.getContext('2d')
 
-  faceapi.matchDimensions(canvas, { width: W, height: H })
+  faceapi.matchDimensions(canvas, { width: video.width, height: video.height })
 
   setInterval(async () => {
-    // 1) capture frame
-    offCtx.drawImage(video, 0, 0, W, H)
-    // 2) draw base frame
-    ctx.clearRect(0, 0, W, H)
-    ctx.drawImage(off, 0, 0, W, H)
+    // draw current frame offscreen
+    offCtx.drawImage(video, 0, 0, video.width, video.height)
 
-    // 3) detect & blur features
-    const dets = await faceapi
+    // detect faces + landmarks
+    const detections = await faceapi
       .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
-    const results = faceapi.resizeResults(dets, { width: W, height: H })
+    const resized = faceapi.resizeResults(detections, {
+      width: video.width,
+      height: video.height
+    })
 
-    results.forEach(r => {
-      const lm = r.landmarks
-      const regions = [
+    // clear previous overlays
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    // for each face, blur each feature
+    resized.forEach(det => {
+      const lm = det.landmarks
+      const features = [
         lm.getLeftEye(),
         lm.getRightEye(),
         lm.getNose(),
         lm.getMouth()
       ]
 
-      regions.forEach(poly => {
-        // tight bbox + margin
-        const xs = poly.map(p => p.x), ys = poly.map(p => p.y)
-        const m = 20
-        const x0 = Math.max(0, Math.floor(Math.min(...xs) - m))
-        const y0 = Math.max(0, Math.floor(Math.min(...ys) - m))
-        const x1 = Math.min(W, Math.ceil(Math.max(...xs) + m))
-        const y1 = Math.min(H, Math.ceil(Math.max(...ys) + m))
+      features.forEach(region => {
+        // compute tight bounding box + small margin
+        const xs = region.map(p => p.x), ys = region.map(p => p.y)
+        const margin = 25
+        const x0 = Math.max(0, Math.floor(Math.min(...xs) - margin))
+        const y0 = Math.max(0, Math.floor(Math.min(...ys) - margin))
+        const x1 = Math.min(video.width,  Math.ceil(Math.max(...xs) + margin))
+        const y1 = Math.min(video.height, Math.ceil(Math.max(...ys) + margin))
         const w  = x1 - x0, h = y1 - y0
-        if (w <= 2 || h <= 2) return
+        if (w <= 0 || h <= 0) return
 
-        // manual blur: draw small → stretch back
-        const BLUR_SCALE = 0.05   // 5% resolution → stronger blur
-        const sw = Math.max(1, Math.floor(w * BLUR_SCALE))
-        const sh = Math.max(1, Math.floor(h * BLUR_SCALE))
-
-        const tmp = document.createElement('canvas')
-        tmp.width  = sw
-        tmp.height = sh
-        const tctx = tmp.getContext('2d')
-
-        // down-sample region
-        tctx.drawImage(off, x0, y0, w, h, 0, 0, sw, sh)
-        // upscale to original, smoothing on
+        // apply blur filter and redraw just that patch
         ctx.save()
-        ctx.imageSmoothingEnabled = true
-        ctx.drawImage(tmp, 0, 0, sw, sh, x0, y0, w, h)
+        ctx.filter = 'blur(25px)'
+        ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
+        ctx.restore()
+        ctx.save()
+        ctx.filter = 'blur(25px)'
+        ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
+        ctx.restore()
+        ctx.save()
+        ctx.filter = 'blur(25px)'
+        ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
+        ctx.restore()
+        ctx.save()
+        ctx.filter = 'blur(20px)'
+        ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
         ctx.restore()
       })
     })
