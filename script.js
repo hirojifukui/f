@@ -108,7 +108,7 @@ function fillOvalWithBlend(srcCtx, dstCtx, cx, cy, rx, ry) {
   const r = Math.round(rSum / count)
   const g = Math.round(gSum / count)
   const b = Math.round(bSum / count)
-  dstCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`
+  dstCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 1.0)`
 
   // draw full face‐width ellipse
   dstCtx.beginPath()
