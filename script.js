@@ -7,13 +7,11 @@ Promise.all([
 ]).then(startVideo)
 
 function startVideo() {
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    navigator.mediaDevices.getUserMedia({ video: true })
-    .then(stream =>  video.srcObject = stream )
-    .catch(err   => { console.error('camera error:', err) })
-  }else{
-    console.error('getUserMedia not supported on this browser.')
-  }
+  navigator.getUserMedia(
+    { video: {} },
+    stream => video.srcObject = stream,
+    err => console.error(err)
+  )
 }
 
 video.addEventListener('play', () => {
