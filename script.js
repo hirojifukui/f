@@ -68,6 +68,10 @@ video.addEventListener('play', () => {
         ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
         ctx.restore()
         ctx.save()
+        ctx.filter = 'blur(25px)'
+        ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
+        ctx.restore()
+        ctx.save()
         ctx.filter = 'blur(20px)'
         ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
         ctx.restore()
