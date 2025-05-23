@@ -43,7 +43,7 @@ video.addEventListener('play', () => {
 
     // for each face, mask a filled ellipse
     resized.forEach(det => {
-      const box = det.detection.box
+      const box = det.box
       fillFaceOval(offCtx, ctx, box)
     })
   }, 100)
