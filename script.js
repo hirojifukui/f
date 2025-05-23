@@ -54,7 +54,7 @@ video.addEventListener('play', () => {
       features.forEach(region => {
         // compute tight bounding box + small margin
         const xs = region.map(p => p.x), ys = region.map(p => p.y)
-        const margin = 4
+        const margin = 20
         const x0 = Math.max(0, Math.floor(Math.min(...xs) - margin))
         const y0 = Math.max(0, Math.floor(Math.min(...ys) - margin))
         const x1 = Math.min(video.width,  Math.ceil(Math.max(...xs) + margin))
@@ -64,7 +64,7 @@ video.addEventListener('play', () => {
 
         // apply blur filter and redraw just that patch
         ctx.save()
-        ctx.filter = 'blur(12px)'
+        ctx.filter = 'blur(20px)'
         ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
         ctx.restore()
       })
