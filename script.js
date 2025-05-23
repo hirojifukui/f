@@ -17,12 +17,11 @@ function startVideo() {
 }
 
 video.addEventListener('play', () => {
-  // onscreen canvas
   const canvas = faceapi.createCanvasFromMedia(video)
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
 
-  // offscreen canvas for sampling pixels
+  // offscreen canvas for pixel sampling
   const offCanvas = document.createElement('canvas')
   offCanvas.width = video.width
   offCanvas.height = video.height
@@ -31,72 +30,88 @@ video.addEventListener('play', () => {
   faceapi.matchDimensions(canvas, { width: video.width, height: video.height })
 
   setInterval(async () => {
-    // grab current frame
+    // draw current frame offscreen
     offCtx.drawImage(video, 0, 0, video.width, video.height)
-    // detect faces
+
+    // detect faces + landmarks
     const detections = await faceapi
       .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-    const resized = faceapi.resizeResults(detections, { width: video.width, height: video.height })
+      .withFaceLandmarks()
+    const resized = faceapi.resizeResults(detections, {
+      width: video.width,
+      height: video.height
+    })
 
-    // clear previous
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // for each face, mask a filled ellipse
     resized.forEach(det => {
-      const box = det.box
-      fillFaceOval(offCtx, ctx, box)
+      const { detection, landmarks } = det
+      const box = detection.box
+
+      // compute jaw‐outline width
+      const jaw = landmarks.getJawOutline()
+      const xs = jaw.map(p => p.x)
+      const minXjaw = Math.min(...xs)
+      const maxXjaw = Math.max(...xs)
+      const faceWidth = maxXjaw - minXjaw
+
+      // ellipse parameters
+      const centerX = minXjaw + faceWidth / 2
+      const centerY = box.y + box.height / 2
+      const radiusX = faceWidth / 2
+      const radiusY = box.height / 2
+
+      fillOvalWithBlend(offCtx, ctx, centerX, centerY, radiusX, radiusY)
     })
   }, 100)
 })
 
 /**
- * Samples the sourceCtx over the ellipse defined by `box`:
- *   center at (box.x+box.width/2, box.y+box.height/2),
- *   radii (box.width/2, box.height/2).
- * Computes the average RGB color inside that ellipse and
- * fills the same ellipse on destCtx.
+ * Samples the **central** 60% of the ellipse to get a cleaner average color,
+ * then fills the full ellipse at 20% opacity.
  */
-function fillFaceOval(sourceCtx, destCtx, box) {
-  const minX = Math.floor(box.x)
-  const minY = Math.floor(box.y)
-  const width = Math.ceil(box.width)
-  const height = Math.ceil(box.height)
-  const centerX = box.x + box.width / 2
-  const centerY = box.y + box.height / 2
-  const radiusX = box.width / 2
-  const radiusY = box.height / 2
+function fillOvalWithBlend(srcCtx, dstCtx, cx, cy, rx, ry) {
+  const sampleFactor = 0.6
+  const srX = rx * sampleFactor
+  const srY = ry * sampleFactor
 
-  // get all pixels in the bounding box
-  const imgData = sourceCtx.getImageData(minX, minY, width, height)
-  const data = imgData.data
-  let r = 0, g = 0, b = 0, count = 0
+  // bounding box for the entire ellipse
+  const minX = Math.floor(cx - rx)
+  const minY = Math.floor(cy - ry)
+  const width = Math.ceil(rx * 2)
+  const height = Math.ceil(ry * 2)
 
-  // iterate and test ellipse membership
+  const img = srcCtx.getImageData(minX, minY, width, height)
+  const data = img.data
+
+  let rSum = 0, gSum = 0, bSum = 0, count = 0
+
+  // only sample pixels inside the inner ellipse
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const px = minX + x
       const py = minY + y
-      const dx = (px - centerX) / radiusX
-      const dy = (py - centerY) / radiusY
-      if (dx * dx + dy * dy <= 1) {
+      const dx = (px - cx) / srX
+      const dy = (py - cy) / srY
+      if (dx*dx + dy*dy <= 1) {
         const idx = (y * width + x) * 4
-        r += data[idx]
-        g += data[idx + 1]
-        b += data[idx + 2]
+        rSum += data[idx]
+        gSum += data[idx + 1]
+        bSum += data[idx + 2]
         count++
       }
     }
   }
   if (!count) return
 
-  // compute average color
-  r = Math.round(r / count)
-  g = Math.round(g / count)
-  b = Math.round(b / count)
-  destCtx.fillStyle = `rgb(${r}, ${g}, ${b})`
+  // compute average and set 20% opacity
+  const r = Math.round(rSum / count)
+  const g = Math.round(gSum / count)
+  const b = Math.round(bSum / count)
+  dstCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`
 
-  // draw & fill the ellipse
-  destCtx.beginPath()
-  destCtx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI)
-  destCtx.fill()
+  // draw full face‐width ellipse
+  dstCtx.beginPath()
+  dstCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2)
+  dstCtx.fill()
 }
