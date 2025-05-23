@@ -4,16 +4,12 @@ const video = document.getElementById('video')
 Promise.all([
   faceapi.nets.tinyFaceDetector.loadFromUri('models'),
   faceapi.nets.faceLandmark68Net.loadFromUri('models'),
-  faceapi.nets.faceRecognitionNet.loadFromUri('models'),
-  faceapi.nets.faceExpressionNet.loadFromUri('models')
 ]).then(startVideo)
 
 function startVideo() {
-  navigator.getUserMedia(
-    { video: {} },
-    stream => video.srcObject = stream,
-    err => console.error(err)
-  )
+  navigator.mediaDevices.getUserMedia({ video: {} })
+    .then(stream => video.srcObject = stream)
+    .catch(err => console.error(err))
 }
 
 video.addEventListener('play', () => {
@@ -42,76 +38,36 @@ video.addEventListener('play', () => {
       height: video.height
     })
 
+    // clear previous overlays
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
+    // for each face, blur each feature
     resized.forEach(det => {
-      const { detection, landmarks } = det
-      const box = detection.box
+      const lm = det.landmarks
+      const features = [
+        lm.getLeftEye(),
+        lm.getRightEye(),
+        lm.getNose(),
+        lm.getMouth()
+      ]
 
-      // compute jaw‐outline width
-      const jaw = landmarks.getJawOutline()
-      const xs = jaw.map(p => p.x)
-      const minXjaw = Math.min(...xs)
-      const maxXjaw = Math.max(...xs)
-      const faceWidth = maxXjaw - minXjaw
+      features.forEach(region => {
+        // compute tight bounding box + small margin
+        const xs = region.map(p => p.x), ys = region.map(p => p.y)
+        const margin = 4
+        const x0 = Math.max(0, Math.floor(Math.min(...xs) - margin))
+        const y0 = Math.max(0, Math.floor(Math.min(...ys) - margin))
+        const x1 = Math.min(video.width,  Math.ceil(Math.max(...xs) + margin))
+        const y1 = Math.min(video.height, Math.ceil(Math.max(...ys) + margin))
+        const w  = x1 - x0, h = y1 - y0
+        if (w <= 0 || h <= 0) return
 
-      // ellipse parameters
-      const centerX = minXjaw + faceWidth / 2
-      const centerY = box.y + box.height / 2
-      const radiusX = faceWidth / 2
-      const radiusY = box.height / 2
-
-      fillOvalWithBlend(offCtx, ctx, centerX, centerY, radiusX, radiusY)
+        // apply blur filter and redraw just that patch
+        ctx.save()
+        ctx.filter = 'blur(12px)'
+        ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
+        ctx.restore()
+      })
     })
   }, 100)
 })
-
-/**
- * Samples the **central** 60% of the ellipse to get a cleaner average color,
- * then fills the full ellipse at 20% opacity.
- */
-function fillOvalWithBlend(srcCtx, dstCtx, cx, cy, rx, ry) {
-  const sampleFactor = 0.6
-  const srX = rx * sampleFactor
-  const srY = ry * sampleFactor
-
-  // bounding box for the entire ellipse
-  const minX = Math.floor(cx - rx)
-  const minY = Math.floor(cy - ry)
-  const width = Math.ceil(rx * 2)
-  const height = Math.ceil(ry * 2)
-
-  const img = srcCtx.getImageData(minX, minY, width, height)
-  const data = img.data
-
-  let rSum = 0, gSum = 0, bSum = 0, count = 0
-
-  // only sample pixels inside the inner ellipse
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const px = minX + x
-      const py = minY + y
-      const dx = (px - cx) / srX
-      const dy = (py - cy) / srY
-      if (dx*dx + dy*dy <= 1) {
-        const idx = (y * width + x) * 4
-        rSum += data[idx]
-        gSum += data[idx + 1]
-        bSum += data[idx + 2]
-        count++
-      }
-    }
-  }
-  if (!count) return
-
-  // compute average and set 20% opacity
-  const r = Math.round(rSum / count)
-  const g = Math.round(gSum / count)
-  const b = Math.round(bSum / count)
-  dstCtx.fillStyle = `rgba(${r}, ${g}, ${b}, 1.0)`
-
-  // draw full face‐width ellipse
-  dstCtx.beginPath()
-  dstCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2)
-  dstCtx.fill()
-}
