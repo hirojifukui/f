@@ -13,6 +13,7 @@ function startVideo() {
     .catch(err   => { console.error('camera error:', err) })
   }else{
     console.error('getUserMedia not supported on this browser.')
+  }
 }
 
 video.addEventListener('play', () => {
