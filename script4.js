@@ -4,7 +4,8 @@ const video = document.getElementById('video')
 Promise.all([
   faceapi.nets.tinyFaceDetector.loadFromUri('models'),
   faceapi.nets.faceLandmark68Net.loadFromUri('models'),
-]).then(startVideo)
+])
+  .then(startVideo)
   .catch(err => console.error('Model load error:', err))
 
 function startVideo() {
@@ -23,7 +24,7 @@ function startVideo() {
 }
 
 function onVideoPlaying() {
-  // set up overlay canvas
+  // 1) Create overlay + offscreen canvases
   const canvas = faceapi.createCanvasFromMedia(video)
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
@@ -32,11 +33,17 @@ function onVideoPlaying() {
     height: video.videoHeight
   })
 
-  setInterval(async () => {
-    // clear previous overlay
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  const offCanvas = document.createElement('canvas')
+  offCanvas.width  = video.videoWidth
+  offCanvas.height = video.videoHeight
+  const offCtx = offCanvas.getContext('2d')
 
-    // detect faces + landmarks
+  // 2) Repeated detection + drawing loop
+  setInterval(async () => {
+    // capture current frame
+    offCtx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight)
+
+    // face + landmarks
     const detections = await faceapi
       .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
@@ -45,22 +52,31 @@ function onVideoPlaying() {
       height: video.videoHeight
     })
 
-    resized.forEach(det => {
-      // grab the 17 jaw-outline points (0 through 16)
-      const jaw = det.landmarks.getJawOutline()
-      if (jaw.length === 0) return
+    // clear previous overlay
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      // draw & fill the polygon
-      ctx.save()
-      ctx.beginPath()
-      ctx.moveTo(jaw[0].x, jaw[0].y)
-      jaw.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y))
-      ctx.closePath()
+    if (resized.length === 0) return
 
-      // pick any RGBA color/alpha you like
-      ctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
-      ctx.fill()
-      ctx.restore()
-    })
+    // use the first face's jaw outline
+    const jaw = resized[0].landmarks.getJawOutline()
+    if (!jaw.length) return
+
+    // find the lowest jaw y-coordinate
+    const maxY = Math.max(...jaw.map(p => p.y))
+
+    // define a 10px slice just below that point
+    const sliceH = 10
+    const sliceY = Math.min(video.videoHeight - sliceH, Math.floor(maxY))
+
+    // tile that slice downward
+    for (let y = sliceY; y < video.videoHeight; y += sliceH) {
+      ctx.drawImage(
+        offCanvas,
+        0, sliceY,                              // source x, y
+        video.videoWidth, sliceH,               // source w, h
+        0, y,                                   // dest x, y
+        video.videoWidth, sliceH                // dest w, h
+      )
+    }
   }, 100)
 }
