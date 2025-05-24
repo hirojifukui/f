@@ -20,28 +20,26 @@ function startVideo() {
 }
 
 video.addEventListener('play', () => {
-  // grab the actual video resolution
-  const width  = video.videoWidth
-  const height = video.videoHeight
-
-  // create & size the visible canvas
+  // 1) create & append the overlay canvas
   const canvas = faceapi.createCanvasFromMedia(video)
-  canvas.width  = width
-  canvas.height = height
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
 
-  // create & size the offscreen canvas for sampling
+  // 2) read its real size (matches the video element)
+  const width  = canvas.width
+  const height = canvas.height
+
+  // 3) size an offscreen canvas to the same dimensions
   const offCanvas = document.createElement('canvas')
   offCanvas.width  = width
   offCanvas.height = height
   const offCtx = offCanvas.getContext('2d')
 
-  // tell face-api about our canvas size
+  // 4) tell face-api to use these dims
   faceapi.matchDimensions(canvas, { width, height })
 
   setInterval(async () => {
-    // draw the current video frame into the offscreen canvas
+    // draw video frame into offscreen
     offCtx.drawImage(video, 0, 0, width, height)
 
     // detect faces + landmarks
@@ -50,10 +48,10 @@ video.addEventListener('play', () => {
       .withFaceLandmarks()
     const resized = faceapi.resizeResults(detections, { width, height })
 
-    // clear any previous overlays
+    // clear previous overlays using the correct size
     ctx.clearRect(0, 0, width, height)
 
-    // for each face, blur each feature region
+    // for each face, blur each feature region—**your blur code is untouched**:
     resized.forEach(det => {
       const lm = det.landmarks
       const features = [
@@ -64,7 +62,6 @@ video.addEventListener('play', () => {
       ]
 
       features.forEach(region => {
-        // compute tight bounding box + margin
         const xs = region.map(p => p.x)
         const ys = region.map(p => p.y)
         const margin = 25
@@ -76,7 +73,7 @@ video.addEventListener('play', () => {
         const h  = y1 - y0
         if (w <= 0 || h <= 0) return
 
-        // your existing blur sequence
+        // — your blur sequence —
         ctx.save()
         ctx.filter = 'blur(25px)'
         ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
