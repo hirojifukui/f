@@ -20,38 +20,42 @@ function startVideo() {
 }
 
 video.addEventListener('play', () => {
-  // 1) create & append the overlay canvas
+  // 1) capture the real camera size
+  const width  = video.videoWidth
+  const height = video.videoHeight
+
+  // 2) onscreen canvas for your blurs
   const canvas = faceapi.createCanvasFromMedia(video)
+  canvas.width  = width
+  canvas.height = height
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
 
-  // 2) read its real size (matches the video element)
-  const width  = canvas.width
-  const height = canvas.height
-
-  // 3) size an offscreen canvas to the same dimensions
+  // 3) offscreen canvas to hold each frame’s pixels
   const offCanvas = document.createElement('canvas')
   offCanvas.width  = width
   offCanvas.height = height
   const offCtx = offCanvas.getContext('2d')
 
-  // 4) tell face-api to use these dims
+  // 4) let face-api know our display size
   faceapi.matchDimensions(canvas, { width, height })
 
   setInterval(async () => {
-    // draw video frame into offscreen
+    // draw the current video frame into offCanvas
     offCtx.drawImage(video, 0, 0, width, height)
 
-    // detect faces + landmarks
+    // --- DETECTION ON THE CANVAS INSTEAD OF THE VIDEO ---
     const detections = await faceapi
-      .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+      .detectAllFaces(offCanvas, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
+
+    // map to our display size
     const resized = faceapi.resizeResults(detections, { width, height })
 
-    // clear previous overlays using the correct size
+    // clear the overlay
     ctx.clearRect(0, 0, width, height)
 
-    // for each face, blur each feature region—**your blur code is untouched**:
+    // BLUR SEQUENCE (exactly as before)
     resized.forEach(det => {
       const lm = det.landmarks
       const features = [
@@ -73,7 +77,6 @@ video.addEventListener('play', () => {
         const h  = y1 - y0
         if (w <= 0 || h <= 0) return
 
-        // — your blur sequence —
         ctx.save()
         ctx.filter = 'blur(25px)'
         ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
