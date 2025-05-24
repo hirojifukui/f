@@ -1,7 +1,12 @@
 // script3.js
 const video = document.getElementById('video')
 
-// 1) Load the models, then start the camera
+// detect iOS (iPhone, iPad, iPod)
+const isIOS = (
+  /iP(hone|od|ad)/.test(navigator.platform) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+)
+
 Promise.all([
   faceapi.nets.tinyFaceDetector.loadFromUri('models'),
   faceapi.nets.faceLandmark68Net.loadFromUri('models'),
@@ -18,36 +23,32 @@ function startVideo() {
     .then(stream => {
       video.srcObject = stream
 
-      // 2) As soon as metadata (videoWidth/videoHeight) is ready, kick off playback
       video.addEventListener('loadedmetadata', () => {
         video.play()
       })
 
-      // 3) Only once the video is actually playing do we create our canvases
       video.addEventListener('playing', onVideoPlaying)
     })
     .catch(err => console.error('Camera error:', err))
 }
 
 function onVideoPlaying() {
-  // Create overlay canvas once
+  // overlay canvas
   const canvas = faceapi.createCanvasFromMedia(video)
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
 
-  // Offscreen canvas for sampling pixels
+  // offscreen canvas to grab raw pixels
   const offCanvas = document.createElement('canvas')
   offCanvas.width  = video.videoWidth
   offCanvas.height = video.videoHeight
   const offCtx = offCanvas.getContext('2d')
 
-  // Make sure Face-API knows our dimensions
   faceapi.matchDimensions(canvas, {
     width:  video.videoWidth,
     height: video.videoHeight
   })
 
-  // Main loop: grab a frame, detect landmarks, blur regions
   setInterval(async () => {
     offCtx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight)
 
@@ -71,7 +72,8 @@ function onVideoPlaying() {
       ]
 
       features.forEach(region => {
-        const xs = region.map(p => p.x), ys = region.map(p => p.y)
+        const xs = region.map(p => p.x)
+        const ys = region.map(p => p.y)
         const margin = 25
         const x0 = Math.max(0, Math.floor(Math.min(...xs) - margin))
         const y0 = Math.max(0, Math.floor(Math.min(...ys) - margin))
@@ -80,12 +82,35 @@ function onVideoPlaying() {
         const w  = x1 - x0, h = y1 - y0
         if (w <= 0 || h <= 0) return
 
-        // your existing blur-repaint steps, unchanged
-        ctx.save(); ctx.filter = 'blur(25px)'; ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h); ctx.restore()
-        ctx.save(); ctx.filter = 'blur(25px)'; ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h); ctx.restore()
-        ctx.save(); ctx.filter = 'blur(25px)'; ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h); ctx.restore()
-        ctx.save(); ctx.filter = 'blur(20px)'; ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h); ctx.restore()
+        if (!isIOS && 'filter' in ctx) {
+          // desktop/Android: your original face-api blur
+          [25,25,25,20].forEach(r => {
+            ctx.save()
+            ctx.filter = `blur(${r}px)`
+            ctx.drawImage(offCanvas, x0, y0, w, h, x0, y0, w, h)
+            ctx.restore()
+          })
+        } else {
+          // iOS fallback: down-sample then up-sample to get a blur
+          const scale = 0.1
+          const tw = Math.max(1, Math.floor(w * scale))
+          const th = Math.max(1, Math.floor(h * scale))
+          const tmp = document.createElement('canvas')
+          tmp.width  = tw
+          tmp.height = th
+          const tctx = tmp.getContext('2d')
+
+          // draw tiny version
+          tctx.drawImage(offCanvas, x0, y0, w, h, 0, 0, tw, th)
+
+          // draw back up to region size with smoothing
+          ctx.save()
+          ctx.imageSmoothingEnabled = true
+          ctx.drawImage(tmp, 0, 0, tw, th, x0, y0, w, h)
+          ctx.restore()
+        }
       })
     })
   }, 100)
 }
+
