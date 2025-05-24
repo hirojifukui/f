@@ -1,9 +1,16 @@
 // script3.js
 const video = document.getElementById('video')
 
-// Preload butterfly image
-const butterfly = new Image()
-butterfly.src = 'btfly.png'
+// Preload butterfly images
+const butterflyImages = []
+for (let i = 1; i <= 5; i++) {
+  const img = new Image()
+  img.src = `btfly${i}.png`
+  butterflyImages.push(img)
+}
+
+// Index for cycling through butterfly images
+let butterflyIndex = 0
 
 Promise.all([
   faceapi.nets.tinyFaceDetector.loadFromUri('models'),
@@ -27,7 +34,6 @@ function startVideo() {
 }
 
 function onVideoPlaying() {
-  // Main overlay canvas
   const canvas = faceapi.createCanvasFromMedia(video)
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
@@ -38,7 +44,9 @@ function onVideoPlaying() {
   })
 
   setInterval(async () => {
-    // Draw and detect on the live video
+    // Cycle butterfly image index
+    butterflyIndex = (butterflyIndex + 1) % butterflyImages.length
+
     const detections = await faceapi
       .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
@@ -60,8 +68,11 @@ function onVideoPlaying() {
       const x1 = Math.min(video.videoWidth,  Math.ceil(Math.max(...xs) + margin))
       const y1 = Math.min(video.videoHeight, Math.ceil(Math.max(...ys) + margin))
       const w  = x1 - x0, h = y1 - y0
-      if (w > 0 && h > 0 && butterfly.complete) {
-        ctx.drawImage(butterfly, x0, y0, w, h)
+      if (w > 0 && h > 0) {
+        const currentButterfly = butterflyImages[butterflyIndex]
+        if (currentButterfly.complete) {
+          ctx.drawImage(currentButterfly, x0, y0, w, h)
+        }
       }
     })
   }, 100)
