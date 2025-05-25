@@ -128,7 +128,7 @@ function onVideoPlaying() {
     faceSlot.w * 0.2,                    // inner radius (full opacity)
     faceSlot.x + faceSlot.w/2,
     faceSlot.y + faceSlot.h/2,
-    faceSlot.w * 0.6                     // outer radius (zero opacity)
+    faceSlot.w * 0.8                     // outer radius (zero opacity)
     )
     mask.addColorStop(0,   'rgba(0,0,0,1)')
     mask.addColorStop(1,   'rgba(0,0,0,0)')
