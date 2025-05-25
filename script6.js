@@ -66,36 +66,48 @@ function onVideoPlaying() {
     h: 99  * bgScale
   }
 
-  setInterval(async () => {
-    // grab current video frame
-    offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height)
+setInterval(async () => {
+  // … your existing code to draw the Roku background …
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(rokuImage, 0, 0, rokuImage.width, rokuImage.height,
+                            0, 0, video.videoWidth, bgHeight)
 
-    // detect face + landmarks
-    const detections = await faceapi
-      .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-      .withFaceLandmarks()
-    const resized  = faceapi.resizeResults(detections, {
-      width:  video.videoWidth,
-      height: video.videoHeight
-    })
+  // grab the latest detections
+  const detections = await faceapi
+    .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+    .withFaceLandmarks()
+  const resized = faceapi.resizeResults(detections, {
+    width:  video.videoWidth,
+    height: video.videoHeight
+  })
 
-    // clear and draw Roku background
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(rokuImage, 0, 0, rokuImage.width, rokuImage.height,
-                              0, 0, video.videoWidth, bgHeight)
+  resized.forEach(det => {
+    // 1. get the raw jaw‐outline points and scale them to the Roku canvas
+    const jaw = det.landmarks.getJawOutline().map(p => ({
+      x: p.x * bgScale,
+      y: p.y * bgScale
+    }))
 
-    // for each detected face, extract & draw into the Roku face‐slot
-    resized.forEach(det => {
-      // use the bounding box around the whole face
-      const { x: fx, y: fy, width: fw, height: fh } = det.detection.box
+    // 2. create an “even‐odd” path: a big rect minus the jaw polygon
+    ctx.save()
+    ctx.beginPath()
+    // outer rect
+    ctx.rect(0, 0, canvas.width, canvas.height)
+    // jaw-polygon
+    ctx.moveTo(jaw[0].x, jaw[0].y)
+    jaw.forEach(pt => ctx.lineTo(pt.x, pt.y))
+    ctx.closePath()
 
-      // extract and scale the face into the slot
-      ctx.drawImage(
-        offCanvas,
-        fx, fy, fw, fh,                   // source face rect
-        faceSlot.x, faceSlot.y,          // destination top-left
-        faceSlot.w, faceSlot.h           // destination size
-      )
-    })
-  }, 100)
+    // 3. punch out (make transparent) everything in that area
+    ctx.globalCompositeOperation = 'destination-out'
+    // the 'evenodd' rule makes the rect minus the polygon the filled region
+    ctx.fill('evenodd')
+    ctx.restore()
+
+    // (optionally) if you still want to draw the face inside the jaw,
+    // you can then drawImage from the offscreen canvas here,
+    // clipped to the jaw shape via ctx.clip()
+  })
+}, 100)
+
 }
