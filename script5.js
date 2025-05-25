@@ -1,4 +1,6 @@
-// script3.js
+// Kikunosuke version with butterfly
+// This JS is pair with aki1.html
+
 const video = document.getElementById('video')
 
 // Preload butterfly images

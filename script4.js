@@ -1,4 +1,8 @@
 // script4.js
+// ろくろ首にするために顎下１０ピクセルを画像のしたまで繰り返すJS
+// roku1.htmlとペア
+
+
 const video = document.getElementById('video')
 
 Promise.all([
