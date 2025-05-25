@@ -59,10 +59,10 @@ function onVideoPlaying() {
 
   // where the face goes on the Roku frame
   const faceSlot = {
-    x: 428 * bgScale,
+    x: 420 * bgScale,
     y: 200 * bgScale,
-    w: 120 * bgScale,
-    h: 109 * bgScale
+    w: 130 * bgScale,
+    h: 129 * bgScale
   }
 
   // redraw ~10fps
