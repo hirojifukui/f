@@ -61,8 +61,8 @@ function onVideoPlaying() {
   const faceSlot = {
     x: 420 * bgScale,
     y: 200 * bgScale,
-    w: 130 * bgScale,
-    h: 129 * bgScale
+    w: 140 * bgScale,
+    h: 134 * bgScale
   }
 
   // redraw ~10fps
