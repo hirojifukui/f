@@ -118,6 +118,42 @@ function onVideoPlaying() {
       jawMapped.forEach(pt => ctx.lineTo(pt.x, pt.y))
       ctx.closePath()
       ctx.clip()
+    // after clipping to jaw… but *before* drawing:
+    ctx.save()
+
+    // 1) build a radial gradient that fades out at edges
+    const mask = ctx.createRadialGradient(
+    faceSlot.x + faceSlot.w/2,
+    faceSlot.y + faceSlot.h/2,
+    faceSlot.w * 0.2,                    // inner radius (full opacity)
+    faceSlot.x + faceSlot.w/2,
+    faceSlot.y + faceSlot.h/2,
+    faceSlot.w * 0.6                     // outer radius (zero opacity)
+    )
+    mask.addColorStop(0,   'rgba(0,0,0,1)')
+    mask.addColorStop(1,   'rgba(0,0,0,0)')
+
+    // draw that gradient into the alpha channel
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.fillStyle = mask
+    ctx.fillRect(
+    faceSlot.x, faceSlot.y,
+    faceSlot.w, faceSlot.h
+    )
+
+    // 2) switch to blend mode
+    ctx.globalCompositeOperation = 'soft-light'  
+    // (you can also try 'overlay', 'lighter', or 'multiply')
+
+    // 3) draw the face normally – it will now softly tint what’s underneath
+    ctx.drawImage(
+    offCanvas,
+    fx, fy, fw, fh,
+    faceSlot.x, faceSlot.y,
+    faceSlot.w, faceSlot.h
+    )
+
+    ctx.restore()
 
       // 6) draw the face into the slot
       ctx.drawImage(
