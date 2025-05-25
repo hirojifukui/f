@@ -1,24 +1,144 @@
-// … after you ctx.clip() to jaw shape …
+// script3.js
+const video = document.getElementById('video')
 
-// 1) draw the face in grayscale (so we keep its light/dark detail)
-ctx.save()
-ctx.filter = 'grayscale(100%)'
-ctx.drawImage(
-  offCanvas,
-  fx, fy, fw, fh,
-  faceSlot.x, faceSlot.y,
-  faceSlot.w, faceSlot.h
+// 1) Load your Roku frame
+const rokuImage = new Image()
+rokuImage.src = 'roku.png'
+
+// 2) iOS detection (for potential fallbacks)
+const isIOS = (
+  /iP(hone|od|ad)/.test(navigator.platform) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 )
 
-// 2) apply your target color over it, using the 'color' blend mode
-ctx.filter = 'none'
-ctx.globalCompositeOperation = 'color'
-ctx.fillStyle = 'rgb(158,132,117)'
-ctx.fillRect(
-  faceSlot.x, faceSlot.y,
-  faceSlot.w, faceSlot.h
-)
+// 3) Load Face-API models, then wait for Roku image before starting
+Promise.all([
+  faceapi.nets.tinyFaceDetector.loadFromUri('models'),
+  faceapi.nets.faceLandmark68Net.loadFromUri('models'),
+]).then(() => {
+  if (rokuImage.complete) startVideo()
+  else rokuImage.onload = startVideo
+}).catch(err => console.error('Model load error:', err))
 
-// 3) restore default composite so future draws are normal
-ctx.globalCompositeOperation = 'source-over'
-ctx.restore()
+function startVideo() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    console.error('getUserMedia not supported')
+    return
+  }
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => {
+      video.srcObject = stream
+      video.addEventListener('loadedmetadata', () => video.play())
+      video.addEventListener('playing', onVideoPlaying)
+    })
+    .catch(err => console.error('Camera error:', err))
+}
+
+function onVideoPlaying() {
+  // overlay canvas
+  const canvas = faceapi.createCanvasFromMedia(video)
+  document.body.append(canvas)
+  const ctx = canvas.getContext('2d')
+
+  // offscreen canvas
+  const offCanvas = document.createElement('canvas')
+  offCanvas.width  = video.videoWidth
+  offCanvas.height = video.videoHeight
+  const offCtx = offCanvas.getContext('2d')
+
+  faceapi.matchDimensions(canvas, {
+    width:  video.videoWidth,
+    height: video.videoHeight
+  })
+
+  // scale Roku to video width
+  const bgScale  = video.videoWidth / rokuImage.width
+  const bgHeight = rokuImage.height * bgScale
+
+  // adjusted face-slot
+  const faceSlot = {
+    x: 420 * bgScale,
+    y: 200 * bgScale,
+    w: 140 * bgScale,
+    h: 134 * bgScale
+  }
+
+  setInterval(async () => {
+    // capture frame
+    offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height)
+
+    // detect faces + landmarks
+    const detections = await faceapi
+      .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+      .withFaceLandmarks()
+    const resized = faceapi.resizeResults(detections, {
+      width:  video.videoWidth,
+      height: video.videoHeight
+    })
+
+    // draw Roku background
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(
+      rokuImage,
+      0, 0, rokuImage.width, rokuImage.height,
+      0, 0, video.videoWidth, bgHeight
+    )
+
+    resized.forEach(det => {
+      // map raw face box → faceSlot
+      const { x: fx, y: fy, width: fw, height: fh } = det.detection.box
+      const scaleX  = faceSlot.w / fw
+      const scaleY  = faceSlot.h / fh
+      const offsetX = faceSlot.x - fx * scaleX
+      const offsetY = faceSlot.y - fy * scaleY
+
+      // get & map jaw outline
+      const jaw = det.landmarks.getJawOutline()
+      const jawMapped = jaw.map(p => ({
+        x: p.x * scaleX + offsetX,
+        y: p.y * scaleY + offsetY
+      }))
+
+      // find top of face & lift jaw endpoints
+      const allPts     = det.landmarks.positions
+      const yTopRaw    = Math.min(...allPts.map(p => p.y))
+      const yTopMapped = yTopRaw * scaleY + offsetY
+      jawMapped[0].y = yTopMapped
+      jawMapped[jawMapped.length - 1].y = yTopMapped
+
+      // 1) clip to inside jaw
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(jawMapped[0].x, jawMapped[0].y)
+      jawMapped.forEach(pt => ctx.lineTo(pt.x, pt.y))
+      ctx.closePath()
+      ctx.clip()
+
+      // 2) draw face in grayscale
+      ctx.save()
+      ctx.filter = 'grayscale(100%)'
+      ctx.drawImage(
+        offCanvas,
+        fx, fy, fw, fh,
+        faceSlot.x, faceSlot.y,
+        faceSlot.w, faceSlot.h
+      )
+
+      // 3) tint to target RGB via 'color' blend mode
+      ctx.filter = 'none'
+      ctx.globalCompositeOperation = 'color'
+      ctx.fillStyle = 'rgb(158,132,117)'
+      ctx.fillRect(
+        faceSlot.x, faceSlot.y,
+        faceSlot.w, faceSlot.h
+      )
+
+      // 4) restore composite & filters
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.restore()
+
+      // 5) restore clipping
+      ctx.restore()
+    })
+  }, 100)
+}
