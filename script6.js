@@ -25,7 +25,6 @@ function startVideo() {
     console.error('getUserMedia not supported')
     return
   }
-
   navigator.mediaDevices.getUserMedia({ video: true })
     .then(stream => {
       video.srcObject = stream
@@ -36,28 +35,24 @@ function startVideo() {
 }
 
 function onVideoPlaying() {
-  // — overlay canvas for drawing
   const canvas = faceapi.createCanvasFromMedia(video)
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
 
-  // — offscreen canvas for grabbing raw video frames
   const offCanvas = document.createElement('canvas')
   offCanvas.width  = video.videoWidth
   offCanvas.height = video.videoHeight
   const offCtx = offCanvas.getContext('2d')
 
-  // keep face-api happy
   faceapi.matchDimensions(canvas, {
     width:  video.videoWidth,
     height: video.videoHeight
   })
 
-  // how much we scale Roku → our canvas
   const bgScale  = video.videoWidth / rokuImage.width
   const bgHeight = rokuImage.height * bgScale
 
-  // where the face goes on the Roku frame
+  // your adjusted face‐slot
   const faceSlot = {
     x: 420 * bgScale,
     y: 200 * bgScale,
@@ -65,12 +60,9 @@ function onVideoPlaying() {
     h: 134 * bgScale
   }
 
-  // redraw ~10fps
   setInterval(async () => {
-    // capture current frame
     offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height)
 
-    // detect face + landmarks
     const detections = await faceapi
       .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
@@ -79,7 +71,7 @@ function onVideoPlaying() {
       height: video.videoHeight
     })
 
-    // draw scaled Roku background
+    // draw Roku background
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(
       rokuImage,
@@ -88,81 +80,51 @@ function onVideoPlaying() {
     )
 
     resized.forEach(det => {
-      // 1) compute mapping from raw box → faceSlot
       const { x: fx, y: fy, width: fw, height: fh } = det.detection.box
       const scaleX  = faceSlot.w / fw
       const scaleY  = faceSlot.h / fh
       const offsetX = faceSlot.x - fx * scaleX
       const offsetY = faceSlot.y - fy * scaleY
 
-      // 2) get the jaw polygon, mapped into slot coords
+      // map jaw to clip region
       const jaw = det.landmarks.getJawOutline()
       const jawMapped = jaw.map(p => ({
         x: p.x * scaleX + offsetX,
         y: p.y * scaleY + offsetY
       }))
 
-      // 3) find the very top of the face (smallest y across all 68 landmarks)
+      // find top of face and lift jaw endpoints
       const allPts     = det.landmarks.positions
       const yTopRaw    = Math.min(...allPts.map(p => p.y))
       const yTopMapped = yTopRaw * scaleY + offsetY
-
-      // 4) raise both end‐points of the jaw up to that top‐face y
       jawMapped[0].y                = yTopMapped
       jawMapped[jawMapped.length-1].y = yTopMapped
 
-      // 5) clip to the adjusted jaw shape, then draw
+      // 1) clip to inside-jaw so only the face itself draws
       ctx.save()
       ctx.beginPath()
       ctx.moveTo(jawMapped[0].x, jawMapped[0].y)
       jawMapped.forEach(pt => ctx.lineTo(pt.x, pt.y))
       ctx.closePath()
       ctx.clip()
-    // after clipping to jaw… but *before* drawing:
-    ctx.save()
 
-    // 1) build a radial gradient that fades out at edges
-    const mask = ctx.createRadialGradient(
-    faceSlot.x + faceSlot.w/2,
-    faceSlot.y + faceSlot.h/2,
-    faceSlot.w * 0.2,                    // inner radius (full opacity)
-    faceSlot.x + faceSlot.w/2,
-    faceSlot.y + faceSlot.h/2,
-    faceSlot.w * 0.8                     // outer radius (zero opacity)
-    )
-    mask.addColorStop(0,   'rgba(0,0,0,1)')
-    mask.addColorStop(1,   'rgba(0,0,0,0)')
+      // 2) (optional) feather edges with a tiny blur to avoid hard seams
+      //    you can tweak this or remove if you like a crisp outline
+      ctx.filter = 'blur(2px)'
 
-    // draw that gradient into the alpha channel
-    ctx.globalCompositeOperation = 'destination-in'
-    ctx.fillStyle = mask
-    ctx.fillRect(
-    faceSlot.x, faceSlot.y,
-    faceSlot.w, faceSlot.h
-    )
-
-    // 2) switch to blend mode
-    ctx.globalCompositeOperation = 'soft-light'  
-    // (you can also try 'overlay', 'lighter', or 'multiply')
-
-    // 3) draw the face normally – it will now softly tint what’s underneath
-    ctx.drawImage(
-    offCanvas,
-    fx, fy, fw, fh,
-    faceSlot.x, faceSlot.y,
-    faceSlot.w, faceSlot.h
-    )
-
-    ctx.restore()
-
-      // 6) draw the face into the slot
+      // 3) draw the face with alpha blending
+      ctx.globalAlpha = 0.65   // 65% face, 35% Roku base
       ctx.drawImage(
         offCanvas,
         fx, fy, fw, fh,
         faceSlot.x, faceSlot.y,
         faceSlot.w, faceSlot.h
       )
+
+      // 4) restore to default for next iteration
       ctx.restore()
+      ctx.filter = 'none'
+      ctx.globalAlpha = 1
     })
   }, 100)
 }
