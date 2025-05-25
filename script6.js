@@ -5,7 +5,7 @@ const video = document.getElementById('video')
 const rokuImage = new Image()
 rokuImage.src = 'roku.png'
 
-// 2) iOS detection (for other fallbacks, if needed)
+// 2) iOS detection (for potential fallbacks)
 const isIOS = (
   /iP(hone|od|ad)/.test(navigator.platform) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
@@ -36,28 +36,28 @@ function startVideo() {
 }
 
 function onVideoPlaying() {
-  // — overlay canvas for drawing everything
+  // — overlay canvas for drawing
   const canvas = faceapi.createCanvasFromMedia(video)
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
 
-  // — offscreen canvas for raw video pixels
+  // — offscreen canvas for grabbing raw video frames
   const offCanvas = document.createElement('canvas')
   offCanvas.width  = video.videoWidth
   offCanvas.height = video.videoHeight
   const offCtx = offCanvas.getContext('2d')
 
-  // match dimensions so face-api resizing works
+  // keep face-api happy
   faceapi.matchDimensions(canvas, {
     width:  video.videoWidth,
     height: video.videoHeight
   })
 
-  // scale your Roku background to fill the video width
+  // how much we scale Roku → our canvas
   const bgScale  = video.videoWidth / rokuImage.width
   const bgHeight = rokuImage.height * bgScale
 
-  // define your face‐slot on the Roku frame, scaled
+  // where the face goes on the Roku frame
   const faceSlot = {
     x: 428 * bgScale,
     y: 222 * bgScale,
@@ -67,10 +67,10 @@ function onVideoPlaying() {
 
   // redraw ~10fps
   setInterval(async () => {
-    // grab video frame
+    // capture current frame
     offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height)
 
-    // detect faces + landmarks
+    // detect face + landmarks
     const detections = await faceapi
       .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
@@ -79,47 +79,52 @@ function onVideoPlaying() {
       height: video.videoHeight
     })
 
-    // clear & draw Roku background
+    // draw scaled Roku background
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(
       rokuImage,
-      0, 0, rokuImage.width, rokuImage.height,    // source
-      0, 0, video.videoWidth, bgHeight            // dest
+      0, 0, rokuImage.width, rokuImage.height,
+      0, 0, video.videoWidth, bgHeight
     )
 
-    // for each face, map & clip to jaw shape, then draw
     resized.forEach(det => {
+      // 1) compute mapping from raw box → faceSlot
       const { x: fx, y: fy, width: fw, height: fh } = det.detection.box
-
-      // compute linear mapping from original box → faceSlot
-      const scaleX = faceSlot.w / fw
-      const scaleY = faceSlot.h / fh
+      const scaleX  = faceSlot.w / fw
+      const scaleY  = faceSlot.h / fh
       const offsetX = faceSlot.x - fx * scaleX
       const offsetY = faceSlot.y - fy * scaleY
 
-      // pull out the jaw‐outline points
+      // 2) get the jaw polygon, mapped into slot coords
       const jaw = det.landmarks.getJawOutline()
-
-      // map them into the faceSlot coordinate space
       const jawMapped = jaw.map(p => ({
         x: p.x * scaleX + offsetX,
         y: p.y * scaleY + offsetY
       }))
 
-      // 1) clip everything **outside** the jaw polygon
+      // 3) find the very top of the face (smallest y across all 68 landmarks)
+      const allPts     = det.landmarks.positions
+      const yTopRaw    = Math.min(...allPts.map(p => p.y))
+      const yTopMapped = yTopRaw * scaleY + offsetY
+
+      // 4) raise both end‐points of the jaw up to that top‐face y
+      jawMapped[0].y                = yTopMapped
+      jawMapped[jawMapped.length-1].y = yTopMapped
+
+      // 5) clip to the adjusted jaw shape, then draw
       ctx.save()
       ctx.beginPath()
       ctx.moveTo(jawMapped[0].x, jawMapped[0].y)
       jawMapped.forEach(pt => ctx.lineTo(pt.x, pt.y))
       ctx.closePath()
-      ctx.clip()   // after this, only inside-jaw drawing is visible
+      ctx.clip()
 
-      // 2) draw the face from the offscreen video into the slot
+      // 6) draw the face into the slot
       ctx.drawImage(
         offCanvas,
-        fx, fy, fw, fh,                  // source: full face rect
-        faceSlot.x, faceSlot.y,         // dest top-left
-        faceSlot.w, faceSlot.h          // dest size
+        fx, fy, fw, fh,
+        faceSlot.x, faceSlot.y,
+        faceSlot.w, faceSlot.h
       )
       ctx.restore()
     })
