@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BodyPix Soft-Edge Mask</title>
+  <style>
+    body, html { margin:0; padding:0; height:100%; }
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: url('fubuki.jpg') center/cover no-repeat;
+      overflow: hidden;
+    }
+    canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      object-fit: cover;
+    }
+    video { display: none; }
+  </style>
+  <!-- TF.js & BodyPix -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
+</head>
+<body>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script>
+    async function setupCamera() {
+      const video = document.getElementById('video');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }, audio: false
+      });
+      video.srcObject = stream;
+      return new Promise(res => {
+        video.onloadedmetadata = () => (video.play(), res(video));
+      });
+    }
+
+    async function main() {
+      const video  = await setupCamera();
+      const canvas = document.getElementById('canvas');
+      const ctx    = canvas.getContext('2d');
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Offscreen canvas for the raw mask
+      const maskCanvas = document.createElement('canvas');
+      maskCanvas.width  = canvas.width;
+      maskCanvas.height = canvas.height;
+      const maskCtx    = maskCanvas.getContext('2d');
+
+      // Load BodyPix
+      const net = await bodyPix.load({
+        architecture: 'MobileNetV1',
+        outputStride: 16,
+        multiplier: 0.75,
+      });
+
+      async function renderFrame() {
+        // 1) get the binary segmentation mask
+        const segmentation = await net.segmentPerson(video, {
+          internalResolution: 'low',
+          segmentationThreshold: 0.5,
+        });
+        const rawMask = bodyPix.toMask(segmentation);
+        maskCtx.putImageData(rawMask, 0, 0);
+
+        // 2) blur the mask to create a soft edge
+        maskCtx.filter = 'blur(20px)';
+        maskCtx.drawImage(maskCanvas, 0, 0);
+        maskCtx.filter = 'none';
+
+        // 3) draw the live video
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // 4) composite: keep only the person, with center at 0.8 opacity
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalAlpha = 0.8;
+        ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
+
+        // 5) reset
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
+
+        requestAnimationFrame(renderFrame);
+      }
+
+      renderFrame();
+    }
+
+    main().catch(console.error);
+  </script>
+</body>
+</html>
