@@ -137,11 +137,11 @@ function onVideoPlaying() {
     fctx.restore()
 
     // 7) merge with face.png & hair.png at original size in mergeFx
-    const targetW = 116
-    const scaleF  = targetW / fw
-    const targetH = fh * scaleF
+    const targetW = 120  // ← change this to whatever width you want
+    const scaleF  = targetW / fw  // fw = width of the extracted face box
+    const targetH = fh * scaleF // fh = height of the extracted face box
     const posX = 100 - targetW/2
-    const posY = 263 - targetH
+    const posY = 265 - targetH
 
     mctx.clearRect(0,0,mergeFx.width,mergeFx.height)
     // draw face base
