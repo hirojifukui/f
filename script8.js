@@ -136,85 +136,74 @@ function onVideoPlaying() {
     fctx.drawImage(rotatedVideo, fx, fy, fw, fh, 0, 0, fw, fh)
     fctx.restore()
     //  グラデーション
-    // --- マスク用オフスクリーン ---
+//
+    // ↓ 1) prepare a dedicated mask canvas/context for the jaw+fade mask ↓
+    //
     const maskCanvas = document.createElement('canvas')
-    maskCanvas.width  = faceFx.width
-    maskCanvas.height = faceFx.height
-    const mctx = maskCanvas.getContext('2d')
+    maskCanvas.width  = fw
+    maskCanvas.height = fh
+    const maskCtx = maskCanvas.getContext('2d')
 
-    // 1) 切り抜いた顔を描画
-    mctx.drawImage(faceFx, 0, 0)
+    // draw just the extracted face into it
+    maskCtx.drawImage(faceFx, 0, 0)
 
-    // 2) 正しい眉ポイント配列を作る（flat な配列）
-    const browPts = det2.landmarks
-    .getLeftEyeBrow()
-    .concat(det2.landmarks.getRightEyeBrow());
+    // ↓ 2) build a flat eyebrow-points array and compute yBrow ↓
+    const browPts =
+    det2.landmarks.getLeftEyeBrow()
+        .concat(det2.landmarks.getRightEyeBrow())
 
-    // 眉の最上点を動画フレーム座標で求める
-    const rawYBrow = Math.min(...browPts.map(p => p.y));
+    const rawYBrow = Math.min(...browPts.map(p => p.y))  // in rotatedVideo space
+    const yBrow     = rawYBrow - fy                     // now local to faceFx
 
-    // ローカル faceFx 座標に直す
-    const yBrow = rawYBrow - fy;
+    // log everything so we see if it’s bad:
+    console.log('gradient coords:',
+    0, yBrow - 20,
+    0, yBrow + 20,
+    ' rawYBrow=', rawYBrow, 'fy=', fy
+    )
 
-    // 非数値ならスキップ
-    if (!Number.isFinite(yBrow)) {
-    console.warn('yBrow is not finite:', rawYBrow, fy);
+    //
+    // ↓ 3) only make/apply the gradient if all four values are finite ↓
+    //
+    const topY    = yBrow - 20
+    const bottomY = yBrow + 20
+
+    if ([topY, bottomY].every(Number.isFinite)) {
+    const grad = maskCtx.createLinearGradient(
+        0, topY,
+        0, bottomY
+    )
+    grad.addColorStop(0, 'rgba(0,0,0,0)')
+    grad.addColorStop(1, 'rgba(0,0,0,1)')
+
+    maskCtx.globalCompositeOperation = 'destination-in'
+    maskCtx.fillStyle = grad
+    maskCtx.fillRect(0, 0, fw, fh)
+    maskCtx.globalCompositeOperation = 'source-over'
     } else {
-    // 3) グラデーションマスクを作る
-    const fade = 20;  // フェードの幅
-    const grad = mctx.createLinearGradient(
-        0, yBrow - fade,
-        0, yBrow + fade
-    );
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,1)');
-
-    // 4) マスクを適用
-    mctx.globalCompositeOperation = 'destination-in';
-    mctx.fillStyle = grad;
-    mctx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
-    mctx.globalCompositeOperation = 'source-over';
+    console.warn('Skipped gradient – non-finite coords')
     }
 
-    // 5) 肌色楕円の背景に合成
-    ctx.fillStyle = '#e0af91'
-    ctx.beginPath()
-    ctx.ellipse(
-    targetX, targetY,
-    targetW/2, targetH/2,
-    0, 0, Math.PI*2
+    //
+    // ↓ 4) now merge maskCanvas (not faceFx!) into your face.png background ↓
+    //
+    const targetW = 130  // or whatever
+    const scaleF  = targetW / fw
+    const targetH = fh * scaleF
+    const posX    = 100 - targetW/2
+    const posY    = 265 - targetH
+
+    mergeCtx.clearRect(0, 0, mergeFx.width, mergeFx.height)
+    mergeCtx.drawImage(faceImage, 0, 0)
+    mergeCtx.drawImage(
+    maskCanvas,      // <-- use your maskCanvas now
+    0, 0, fw, fh,    // source
+    posX, posY,      // dest
+    targetW, targetH // size
     )
-    ctx.fill()
+    mergeCtx.drawImage(hairImage, 0, 0)
 
-    // 6) マスク済み顔を描画
-    ctx.drawImage(
-    maskCanvas,
-    0, 0, maskCanvas.width, maskCanvas.height,
-    destX, destY, targetW, targetH
-    )
-
-
-
-
-    // 7) merge with face.png & hair.png at original size in mergeFx
-    const targetW = 130  // ← change this to whatever width you want
-    const scaleF  = targetW / fw  // fw = width of the extracted face box
-    const targetH = fh * scaleF // fh = height of the extracted face box
-    const posX = 100 - targetW/2
-    const posY = 265 - targetH
-
-    mctx.clearRect(0,0,mergeFx.width,mergeFx.height)
-    // draw face base
-    mctx.drawImage(faceImage, 0, 0)
-    // overlay extracted face
-    mctx.drawImage(
-    maskCanvas,
-    0, 0, maskCanvas.width, maskCanvas.height,
-    destX, destY, targetW, targetH
-    )
-    //mctx.drawImage(faceFx, 0, 0, fw, fh, posX, posY, targetW, targetH)
-    // overlay hair
-    mctx.drawImage(hairImage, 0, 0)
+// … then continue with the rest of your head/hctx/roku draw logic …
 
     // 8) draw merged head into headFx scaled by same Roku scale
     hctx.clearRect(0,0, headFx.width, headFx.height)
