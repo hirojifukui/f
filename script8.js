@@ -145,27 +145,36 @@ function onVideoPlaying() {
     // 1) 切り抜いた顔を描画
     mctx.drawImage(faceFx, 0, 0)
 
-    // 2) 眉ライン座標を取得（landmarks は face-api の結果）
-    const browPts = [
-       ...det2.landmarks.getLeftEyeBrow(),
-       ...det2.landmarks.getRightEyeBrow()
-    ]
-    const yBrow = Math.min(...browPts.map(p => p.y)) - fy  // faceFx のローカル y
+    // 2) 正しい眉ポイント配列を作る（flat な配列）
+    const browPts = det2.landmarks
+    .getLeftEyeBrow()
+    .concat(det2.landmarks.getRightEyeBrow());
 
+    // 眉の最上点を動画フレーム座標で求める
+    const rawYBrow = Math.min(...browPts.map(p => p.y));
+
+    // ローカル faceFx 座標に直す
+    const yBrow = rawYBrow - fy;
+
+    // 非数値ならスキップ
+    if (!Number.isFinite(yBrow)) {
+    console.warn('yBrow is not finite:', rawYBrow, fy);
+    } else {
     // 3) グラデーションマスクを作る
-    const fade = 20  // ぼかし幅（px）
+    const fade = 20;  // フェードの幅
     const grad = mctx.createLinearGradient(
-    0, yBrow - fade,
-    0, yBrow + fade
-    )
-    grad.addColorStop(0, 'rgba(0,0,0,0)')
-    grad.addColorStop(1, 'rgba(0,0,0,1)')
+        0, yBrow - fade,
+        0, yBrow + fade
+    );
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,1)');
 
-    // 4) destination-in でアルファを調整
-    mctx.globalCompositeOperation = 'destination-in'
-    mctx.fillStyle = grad
-    mctx.fillRect(0, 0, maskCanvas.width, maskCanvas.height)
-    mctx.globalCompositeOperation = 'source-over'
+    // 4) マスクを適用
+    mctx.globalCompositeOperation = 'destination-in';
+    mctx.fillStyle = grad;
+    mctx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+    mctx.globalCompositeOperation = 'source-over';
+    }
 
     // 5) 肌色楕円の背景に合成
     ctx.fillStyle = '#e0af91'
