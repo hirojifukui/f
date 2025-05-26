@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BodyPix Head Box + Yuki Next To Head</title>
+  <style>
+    body, html { margin:0; padding:0; height:100%; }
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: url('blizzard1.png') center/cover no-repeat;
+      overflow: hidden;
+    }
+    canvas {
+      position: absolute; top:0; left:0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      background: transparent;
+    }
+    video { display: none; }
+  </style>
+  <!-- TF.js & BodyPix -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
+</head>
+<body>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script>
+    // face parts IDs in BodyPix
+    const HEAD_PART_IDS = [0, 1];
+
+    async function setupCamera() {
+      const video = document.getElementById('video');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' }, audio: false
+      });
+      video.srcObject = stream;
+      return new Promise(res => video.onloadedmetadata = () => (video.play(), res(video)));
+    }
+
+    async function main() {
+      const video  = await setupCamera();
+      const canvas = document.getElementById('canvas');
+      const ctx    = canvas.getContext('2d');
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // offscreen canvases
+      const maskCanvas  = document.createElement('canvas');
+      const videoCanvas = document.createElement('canvas');
+      for (let c of [maskCanvas, videoCanvas]) {
+        c.width  = canvas.width;
+        c.height = canvas.height;
+      }
+      const maskCtx  = maskCanvas.getContext('2d');
+      const videoCtx = videoCanvas.getContext('2d');
+
+      // preload Yuki
+      const yukiImg = new Image();
+      await new Promise(res => { yukiImg.onload = res; yukiImg.src = 'yuki.png'; });
+
+      // load BodyPix
+      const net = await bodyPix.load({
+        architecture: 'MobileNetV1', outputStride: 16, multiplier: 0.75
+      });
+
+      async function renderFrame() {
+        // 1) part-level segmentation
+        const parts = await net.segmentPersonParts(video, {
+          internalResolution: 'medium',
+          segmentationThreshold: 0.5
+        });
+
+        // 2) compute head bounding box
+        const { width, height } = canvas;
+        let minX = width, minY = height, maxX = 0, maxY = 0;
+        const data = parts.data;
+        for (let i = 0; i < data.length; i++) {
+          if (HEAD_PART_IDS.includes(data[i])) {
+            const x = i % width;
+            const y = Math.floor(i / width);
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+        // handle case when no head detected:
+        if (maxX < minX || maxY < minY) {
+          minX = minY = maxX = maxY = 0;
+        }
+        const headW = maxX - minX + 1;
+        const headH = maxY - minY + 1;
+        const headCX = minX + headW/2;
+        const headCY = minY + headH/2;
+        console.log(`Head box @(${minX},${minY}) size ${headW}×${headH}`);
+
+        // 3) build an RGBA mask for head
+        const maskImg = maskCtx.createImageData(width, height);
+        for (let i = 0; i < data.length; i++) {
+          maskImg.data[4*i + 3] = HEAD_PART_IDS.includes(data[i]) ? 255 : 0;
+        }
+        maskCtx.putImageData(maskImg, 0, 0);
+
+        // 4) blur for soft edge
+        maskCtx.filter = 'blur(20px)';
+        maskCtx.drawImage(maskCanvas, 0, 0);
+        maskCtx.filter = 'none';
+
+        // 5) draw & punch-out video onto videoCanvas
+        videoCtx.clearRect(0,0,width,height);
+        videoCtx.drawImage(video, 0,0,width,height);
+        videoCtx.globalCompositeOperation = 'destination-out';
+        videoCtx.drawImage(maskCanvas, 0,0);
+        videoCtx.globalCompositeOperation = 'source-over';
+
+        // 6) compose into visible canvas
+        ctx.clearRect(0,0,width,height);
+
+        // a) background is CSS on container (blizzard1.png)
+
+        // b) draw Yuki **centered next to** head:
+        //    left edge of Yuki flush with head's right edge
+        const yX = maxX;
+        const yY = headCY - (yukiImg.height/2);
+        ctx.drawImage(yukiImg, yX, yY);
+
+        // c) draw the masked video (holes for head)
+        ctx.drawImage(videoCanvas, 0,0,width,height);
+
+        requestAnimationFrame(renderFrame);
+      }
+
+      renderFrame();
+    }
+
+    main().catch(console.error);
+  </script>
+</body>
+</html>
