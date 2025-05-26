@@ -169,12 +169,12 @@ function onVideoPlaying() {
     // 10) rotate head back around pivot (100,245), then place pivot to (432,300)
     // const pivotFaceX = 100
     // const pivotFaceY = 245
-    const pivotX = bgX + 100*scale
-    const pivotY = bgY + 245*scale
+    const pivotX = 100*scale
+    const pivotY = 263*scale
     const targetPivotX = bgX +432*scale
     const targetPivotY = bgY + 300 * scale
-    const dx = targetPivotX - pivotX
-    const dy = targetPivotY - pivotY
+    const dx = 432*scale
+    const dy = 300 * scale
 
     ctx.save()
     ctx.translate(pivotX, pivotY)
