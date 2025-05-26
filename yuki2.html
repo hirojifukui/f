@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BodyPix Soft-Edge Mask</title>
+  <title>BodyPix Soft-Edge Mask (Front Camera)</title>
   <style>
     body, html { margin:0; padding:0; height:100%; }
     #container {
@@ -23,7 +23,7 @@
     }
     video { display: none; }
   </style>
-  <!-- TF.js & BodyPix -->
+  <!-- Load TensorFlow.js & BodyPix -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
 </head>
@@ -37,7 +37,9 @@
     async function setupCamera() {
       const video = document.getElementById('video');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, audio: false
+        // switch to the front-facing camera:
+        video: { facingMode: 'user' },
+        audio: false
       });
       video.srcObject = stream;
       return new Promise(res => {
@@ -75,7 +77,7 @@
         const rawMask = bodyPix.toMask(segmentation);
         maskCtx.putImageData(rawMask, 0, 0);
 
-        // 2) blur the mask to create a soft edge
+        // 2) blur the mask for a soft edge
         maskCtx.filter = 'blur(20px)';
         maskCtx.drawImage(maskCanvas, 0, 0);
         maskCtx.filter = 'none';
@@ -84,9 +86,9 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // 4) composite: keep only the person, with center at 0.8 opacity
+        // 4) composite: keep only the person, at up to 0.8 opacity
         ctx.globalCompositeOperation = 'destination-out';
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = 0.8;
         ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
 
         // 5) reset
