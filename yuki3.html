@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Static Blizzard + Moving Yuki + BodyPix Mask</title>
+  <style>
+    html, body { margin:0; padding:0; height:100%; overflow:hidden; }
+    #container { position: relative; width:100vw; height:100vh; }
+    /* video underneath, mirrored for selfie view */
+    video {
+      position:absolute; top:0; left:0;
+      width:100%; height:100%;
+      object-fit: cover;
+      z-index: 0;
+      transform: scaleX(-1);
+    }
+    /* canvas on top */
+    canvas {
+      position:absolute; top:0; left:0;
+      width:100%; height:100%;
+      object-fit: cover;
+      z-index: 1;
+    }
+  </style>
+  <!-- TF.js & BodyPix -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
+</head>
+<body>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script>
+    async function setupCamera() {
+      const video = document.getElementById('video');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' }, audio: false
+      });
+      video.srcObject = stream;
+      return new Promise(res => {
+        video.onloadedmetadata = () => (video.play(), res(video));
+      });
+    }
+
+    async function main() {
+      const video  = await setupCamera();
+      const canvas = document.getElementById('canvas');
+      const ctx    = canvas.getContext('2d');
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Offscreen canvas for person mask
+      const maskCanvas = document.createElement('canvas');
+      maskCanvas.width  = canvas.width;
+      maskCanvas.height = canvas.height;
+      const maskCtx    = maskCanvas.getContext('2d');
+
+      // Load images
+      const bgImg   = new Image();
+      const yukiImg = new Image();
+      let loaded = 0;
+      function onLoad() {
+        if (++loaded === 2) startLoop();
+      }
+      bgImg.src   = 'blizzard.png'; bgImg.onload   = onLoad;
+      yukiImg.src = 'yuki.png';    yukiImg.onload = onLoad;
+
+      // Load BodyPix
+      const net = await bodyPix.load({
+        architecture: 'MobileNetV1',
+        outputStride: 16,
+        multiplier: 0.75
+      });
+
+      // Sprite state
+      let x  = (canvas.width  - yukiImg.width)  / 2;
+      let y  = (canvas.height - yukiImg.height) / 2;
+      let vx = (Math.random()*2 - 1) * 0.5;
+      let vy = (Math.random()*2 - 1) * 0.5;
+      const maxSpeed = 1;
+
+      function startLoop() {
+        async function loop() {
+          // 1) get person mask
+          const seg = await net.segmentPerson(video, {
+            internalResolution: 'low',
+            segmentationThreshold: 0.5
+          });
+          const mask = bodyPix.toMask(seg);
+          maskCtx.putImageData(mask, 0, 0);
+
+          // 2) draw static background
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+
+          // 3) draw moving yuki
+          ctx.drawImage(yukiImg, x, y);
+
+          // 4) cut out person (destination-out)
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
+          ctx.globalCompositeOperation = 'source-over';
+
+          // 5) update yuki velocity & position
+          vx += (Math.random() - 0.5) * 0.05;
+          vy += (Math.random() - 0.5) * 0.05;
+          let speed = Math.hypot(vx, vy);
+          if (speed > maxSpeed) {
+            vx = (vx/speed) * maxSpeed;
+            vy = (vy/speed) * maxSpeed;
+          }
+          x += vx; y += vy;
+          // bounce sprite off edges
+          if (x < 0 || x + yukiImg.width > canvas.width)  vx = -vx;
+          if (y < 0 || y + yukiImg.height > canvas.height) vy = -vy;
+          x = Math.max(0, Math.min(x, canvas.width - yukiImg.width));
+          y = Math.max(0, Math.min(y, canvas.height - yukiImg.height));
+
+          requestAnimationFrame(loop);
+        }
+        loop();
+      }
+    }
+
+    main().catch(console.error);
+  </script>
+</body>
+</html>
