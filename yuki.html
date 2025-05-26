@@ -3,64 +3,80 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BodyPix with Fubuki Background</title>
+  <title>BodyPix Fubuki Background</title>
   <style>
-    /* full-screen canvas */
-    body, html { margin:0; padding:0; overflow:hidden; height:100%; }
-    canvas {
-      display: block;
+    /* full-screen container with fubuki.jpg behind */
+    body, html { margin:0; padding:0; height:100%; }
+    #container {
+      position: relative;
       width: 100vw;
       height: 100vh;
+      background: url('fubuki.jpg') center/cover no-repeat;
+    }
+    /* transparent canvas on top for the cut-out person */
+    canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
       background: transparent;
       object-fit: cover;
     }
-    video { display: none; }
+    /* hide the raw video element */
+    video {
+      display: none;
+    }
   </style>
-
-  <!-- TF.js & BodyPix -->
+  <!-- load TF.js & BodyPix -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
 </head>
 <body>
-  <video id="video" autoplay playsinline></video>
-  <canvas id="canvas"></canvas>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
 
   <script>
-    // 1) Preload your background image
-    const bgImg = new Image();
-    bgImg.src = 'fubuki.jpg';  // make sure fubuki.jpg is served alongside this HTML
-
     async function setupCamera() {
       const video = document.getElementById('video');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, audio: false
+        video: { facingMode: 'environment' },
+        audio: false
       });
       video.srcObject = stream;
-      return new Promise(res => video.onloadedmetadata = () => (video.play(), res(video)));
+      return new Promise(res => {
+        video.onloadedmetadata = () => {
+          video.play();
+          res(video);
+        };
+      });
     }
 
-    // 2) Main entrypoint runs after bgImg loads
-    bgImg.onload = async () => {
+    async function main() {
+      // 1) start camera
       const video = await setupCamera();
+
+      // 2) size our visible canvas
       const canvas = document.getElementById('canvas');
       canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx      = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d');
 
-      // offscreen canvas for mask
+      // 3) offscreen canvas just for the mask
       const maskCanvas = document.createElement('canvas');
       maskCanvas.width  = canvas.width;
       maskCanvas.height = canvas.height;
-      const maskCtx    = maskCanvas.getContext('2d');
+      const maskCtx = maskCanvas.getContext('2d');
 
-      // Load BodyPix (MobileNetV1 0.75 for mobile)
+      // 4) load BodyPix (MobileNetV1 0.75 for mobile) 
       const net = await bodyPix.load({
         architecture: 'MobileNetV1',
         outputStride: 16,
         multiplier: 0.75,
       });
 
-      // 3) Render loop
+      // 5) render loop
       async function renderFrame() {
         // a) segment the person
         const segmentation = await net.segmentPerson(video, {
@@ -68,35 +84,32 @@
           segmentationThreshold: 0.5
         });
 
-        // b) create RGBA mask (transparent background, opaque person)
+        // b) make an RGBA mask: transparent background, opaque person
         const mask = bodyPix.toMask(
           segmentation,
-          { r: 0, g: 0, b: 0, a: 0 },    // background → transparent
-          { r: 0, g: 0, b: 0, a: 255 }   // person → opaque
+          { r: 0, g: 0, b: 0, a: 0 },    // background → fully transparent
+          { r: 0, g: 0, b: 0, a: 255 }   // person   → fully opaque
         );
         maskCtx.putImageData(mask, 0, 0);
 
-        // c) clear canvas
+        // c) clear & draw the live video frame
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // d) draw your fubuki.jpg background
-        ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
-
-        // e) draw the mask
-        ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
-
-        // f) composite: keep only video where mask is opaque
-        ctx.globalCompositeOperation = 'source-in';
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // g) reset composite mode
+        // d) keep only the person pixels
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
+
+        // e) reset for next frame
         ctx.globalCompositeOperation = 'source-over';
 
         requestAnimationFrame(renderFrame);
       }
 
       renderFrame();
-    };
+    }
+
+    main().catch(console.error);
   </script>
 </body>
 </html>
