@@ -2,15 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BodyPix + Yuki Overlay</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>BodyPix + Aspect-Ratio-Correct Yuki</title>
   <style>
     body, html { margin:0; padding:0; height:100%; }
     #container {
       position: relative;
       width: 100vw;
       height: 100vh;
-      /* UPDATED: static blizzard1 background */
       background: url('blizzard1.png') center/cover no-repeat;
       overflow: hidden;
     }
@@ -24,7 +23,6 @@
     }
     video { display: none; }
   </style>
-  <!-- TF.js & BodyPix -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
 </head>
@@ -38,7 +36,7 @@
     async function setupCamera() {
       const video = document.getElementById('video');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' }, // front camera
+        video: { facingMode: 'user' },
         audio: false
       });
       video.srcObject = stream;
@@ -48,32 +46,30 @@
     }
 
     async function main() {
-      const video = await setupCamera();
+      const video  = await setupCamera();
       const canvas = document.getElementById('canvas');
       const ctx    = canvas.getContext('2d');
       canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
 
-      // Offscreen canvas for the raw person-mask
-      const maskCanvas = document.createElement('canvas');
-      maskCanvas.width  = canvas.width;
-      maskCanvas.height = canvas.height;
-      const maskCtx = maskCanvas.getContext('2d');
-
-      // Offscreen canvas to build the masked video feed
+      // Offscreen canvases
+      const maskCanvas  = document.createElement('canvas');
       const videoCanvas = document.createElement('canvas');
-      videoCanvas.width  = canvas.width;
-      videoCanvas.height = canvas.height;
+      [maskCanvas, videoCanvas].forEach(c => {
+        c.width  = canvas.width;
+        c.height = canvas.height;
+      });
+      const maskCtx  = maskCanvas.getContext('2d');
       const videoCtx = videoCanvas.getContext('2d');
 
-      // Load yuki.png
+      // Load Yuki
       const yukiImg = new Image();
       await new Promise(res => {
         yukiImg.onload = res;
         yukiImg.src    = 'yuki.png';
       });
 
-      // Load BodyPix model (mobile-friendly)
+      // Load BodyPix
       const net = await bodyPix.load({
         architecture: 'MobileNetV1',
         outputStride: 16,
@@ -81,37 +77,38 @@
       });
 
       async function renderFrame() {
-        // 1) segment the person
-        const segmentation = await net.segmentPerson(video, {
+        // 1) segmentation mask
+        const seg = await net.segmentPerson(video, {
           internalResolution: 'medium',
           segmentationThreshold: 0.5,
         });
-
-        // 2) build a binary mask
-        const rawMask = bodyPix.toMask(segmentation);
+        const rawMask = bodyPix.toMask(seg);
         maskCtx.putImageData(rawMask, 0, 0);
 
-        // 3) blur the mask for soft edges
+        // 2) blur for soft edge
         maskCtx.filter = 'blur(20px)';
         maskCtx.drawImage(maskCanvas, 0, 0);
         maskCtx.filter = 'none';
 
-        // 4) draw the live video into videoCanvas
+        // 3) draw and punch‐out video on videoCanvas
         videoCtx.clearRect(0, 0, canvas.width, canvas.height);
         videoCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // 5) punch out the person from videoCanvas
         videoCtx.globalCompositeOperation = 'destination-out';
         videoCtx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
         videoCtx.globalCompositeOperation = 'source-over';
 
-        // 6) now compose onto the visible canvas:
+        // 4) compose final output
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        //   a) draw Yuki behind
-        ctx.drawImage(yukiImg, 0, 0, canvas.width, canvas.height);
+        // — a) draw Yuki, preserving aspect ratio
+        const yW = yukiImg.width, yH = yukiImg.height;
+        const scale = Math.min(canvas.width / yW, canvas.height / yH);
+        const drawW = yW * scale, drawH = yH * scale;
+        const drawX = (canvas.width - drawW) / 2;
+        const drawY = (canvas.height - drawH) / 2;
+        ctx.drawImage(yukiImg, drawX, drawY, drawW, drawH);
 
-        //   b) draw the masked video feed on top
+        // — b) draw the masked video (with holes where the person was)
         ctx.drawImage(videoCanvas, 0, 0, canvas.width, canvas.height);
 
         requestAnimationFrame(renderFrame);
