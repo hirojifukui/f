@@ -155,12 +155,12 @@ function onVideoPlaying() {
     const rawYBrow = Math.min(...browPts.map(p => p.y))  // in rotatedVideo space
     const yBrow     = rawYBrow - fy                     // now local to faceFx
 
-    // log everything so we see if it’s bad:
-    console.log('gradient coords:',
-    0, yBrow - 20,
-    0, yBrow + 20,
-    ' rawYBrow=', rawYBrow, 'fy=', fy
-    )
+    // // log everything so we see if it’s bad:
+    // console.log('gradient coords:',
+    // 0, yBrow - 20,
+    // 0, yBrow + 20,
+    // ' rawYBrow=', rawYBrow, 'fy=', fy
+    // )
 
     //
     // ↓ 3) only make/apply the gradient if all four values are finite ↓
@@ -181,7 +181,7 @@ function onVideoPlaying() {
     maskCtx.fillRect(0, 0, fw, fh)
     maskCtx.globalCompositeOperation = 'source-over'
     } else {
-    console.warn('Skipped gradient – non-finite coords')
+    // console.warn('Skipped gradient – non-finite coords')
     }
 
     //
