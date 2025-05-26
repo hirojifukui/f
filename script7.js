@@ -3,7 +3,7 @@ const video = document.getElementById('video')
 
 // load static assets
 const rokuImage = new Image(), faceImage = new Image(), hairImage = new Image()
-rokuImage.src = 'roku.png'
+rokuImage.src = 'roku2.png'
 faceImage.src = 'face.png'
 hairImage.src = 'hair.png'
 
