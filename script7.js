@@ -169,8 +169,8 @@ function onVideoPlaying() {
     // 10) rotate head back around pivot (100,245), then place pivot to (432,300)
     const pivotFaceX = 100
     const pivotFaceY = 245
-    const PivotX = bgX + pivotFaceX*scale
-    const PivotY = bgY + pivotFaceY*scale
+    const pivotX = bgX + pivotFaceX*scale
+    const pivotY = bgY + pivotFaceY*scale
     const dx = targetPivotX - pivotX
     const dy = targetPivotY - pivotY
 
