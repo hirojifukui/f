@@ -167,21 +167,32 @@ function onVideoPlaying() {
     )
 
     // 10) rotate head back around pivot (100,245), then place pivot to (432,300)
-    // const pivotFaceX = 100
-    // const pivotFaceY = 245
-    const pivotX = 100*scale
-    const pivotY = 263*scale
-    const targetPivotX = bgX +432*scale
-    const targetPivotY = bgY + 300 * scale
-    const dx = 432*scale
-    const dy = 300 * scale
+    // your pivot in face.png space:
+    const pivotFaceX = 100
+    const pivotFaceY = 263
 
+    // where that pivot should land on Roku:
+    const destFaceX = 432
+    const destFaceY = 300
+
+    // map both through the same scale + bg offset
+    const pivotHeadX = pivotFaceX * scale
+    const pivotHeadY = pivotFaceY * scale
+    const destX = bgX + destFaceX * scale
+    const destY = bgY + destFaceY * scale
+
+    // now rotate *only* headFx around its own pivot
     ctx.save()
-    ctx.translate(pivotX, pivotY)
-    ctx.rotate(angle)
-    ctx.translate(-pivotX, -pivotY)
-    // draw the headFx at computed offset (natural size retains scale)
-    ctx.drawImage(headFx, dx, dy)
+    ctx.translate(destX, destY)      // move origin to destination pivot
+    ctx.rotate(angle)                // apply tilt
+    // draw headFx so that its (pivotHeadX,pivotHeadY) sits exactly at the origin
+    ctx.drawImage(
+    headFx,
+    -pivotHeadX,
+    -pivotHeadY,
+    headFx.width,
+    headFx.height
+    )
     ctx.restore()
 
   }, 100)
