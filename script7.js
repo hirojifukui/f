@@ -1,17 +1,13 @@
-// script8.js
+// script9.js
 const video = document.getElementById('video')
 
-// load all your static assets
+// load static assets
 const rokuImage = new Image(), faceImage = new Image(), hairImage = new Image()
 rokuImage.src = 'roku.png'
 faceImage.src = 'face.png'
 hairImage.src = 'hair.png'
 
-// iOS detection (if needed)
-const isIOS = /iP(hone|od|ad)/.test(navigator.platform)
-            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-
-// wait for models + images
+// wait for models and images
 Promise.all([
   faceapi.nets.tinyFaceDetector.loadFromUri('models'),
   faceapi.nets.faceLandmark68Net.loadFromUri('models'),
@@ -22,225 +18,151 @@ Promise.all([
   .catch(err => console.error(err))
 
 function startVideo() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    return console.error('getUserMedia not supported')
-  }
   navigator.mediaDevices.getUserMedia({ video: true })
     .then(stream => {
       video.srcObject = stream
       video.onloadedmetadata = () => video.play()
       video.onplaying      = onVideoPlaying
     })
-    .catch(err => console.error(err))
+    .catch(err => console.error('Camera error:', err))
 }
 
 function onVideoPlaying() {
-  // main display canvas
+  // main canvas
   const canvas = faceapi.createCanvasFromMedia(video)
   document.body.append(canvas)
   const ctx = canvas.getContext('2d')
 
-  // offscreen to grab current frame
+  // offscreen: raw video frame
   const videoFx = document.createElement('canvas')
   videoFx.width  = video.videoWidth
   videoFx.height = video.videoHeight
   const vctx = videoFx.getContext('2d')
 
-  faceapi.matchDimensions(canvas, {
-    width:  video.videoWidth,
-    height: video.videoHeight
-  })
+  // offscreen: rotated full frame
+  const rotatedVideo = document.createElement('canvas')
+  rotatedVideo.width  = video.videoWidth
+  rotatedVideo.height = video.videoHeight
+  const rctx = rotatedVideo.getContext('2d')
 
-  // original Roku dimensions
-  const ROKU_W = rokuImage.width, ROKU_H = rokuImage.height
+  // offscreen: extracted face
+  const faceFx = document.createElement('canvas')
+  const fctx = faceFx.getContext('2d')
 
-  // compute uniform scale so Roku fits in the video
-  const scale = Math.min(
-    video.videoWidth  / ROKU_W,
-    video.videoHeight / ROKU_H
-  )
-  const bgW = ROKU_W * scale, bgH = ROKU_H * scale
-  const bgX = (video.videoWidth  - bgW) / 2
-  const bgY = (video.videoHeight - bgH) / 2
-
-  // original face-slot in Roku coords
-  const origSlot = { x: 420, y: 200, w: 140, h: 134 }
-  // scaled slot on canvas
-  const slot = {
-    x: origSlot.x * scale + bgX,
-    y: origSlot.y * scale + bgY,
-    w: origSlot.w * scale,
-    h: origSlot.h * scale
-  }
-
-  // offscreen for merging face + hair
+  // offscreen: merged head (face.png + face + hair.png)
   const mergeFx = document.createElement('canvas')
   mergeFx.width  = Math.max(faceImage.width, hairImage.width)
   mergeFx.height = Math.max(faceImage.height, hairImage.height)
   const mctx = mergeFx.getContext('2d')
 
-  // offscreen for final head before tilt
+  // offscreen: final head before tilt-back
+  const ROKU_W = rokuImage.width, ROKU_H = rokuImage.height
+  const scale = Math.min(video.videoWidth/ROKU_W, video.videoHeight/ROKU_H)
+  const bgW = ROKU_W*scale, bgH = ROKU_H*scale
   const headFx = document.createElement('canvas')
   headFx.width  = bgW
   headFx.height = bgH
   const hctx = headFx.getContext('2d')
 
+  // match dimensions
+  faceapi.matchDimensions(canvas, {
+    width:  video.videoWidth,
+    height: video.videoHeight
+  })
+
   setInterval(async () => {
-    // 0) grab current video frame
+    // 1) capture raw frame
     vctx.drawImage(video, 0, 0)
 
-    // 1) detect face + landmarks
-    const detections = await faceapi
+    // 2) initial detect to get tilt
+    const dets1 = await faceapi
       .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
-    if (!detections.length) return
-    const det = detections[0]
-    const { x: fx, y: fy, width: fw, height: fh } = det.detection.box
-
-    // 2) eye centers & tilt
-    const avg = pts => {
-      const s = pts.reduce((a,p) => ({ x: a.x+p.x, y: a.y+p.y }), {x:0,y:0})
-      return { x: s.x/pts.length, y: s.y/pts.length }
-    }
-    const L = avg(det.landmarks.getLeftEye())
-    const R = avg(det.landmarks.getRightEye())
+    if (!dets1.length) return
+    const det1 = dets1[0]
+    const L = det1.landmarks.getLeftEye().reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0})
+    const R = det1.landmarks.getRightEye().reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0})
+    L.x/=6; L.y/=6; R.x/=6; R.y/=6  // each eye has 6 pts
     const angle = Math.atan2(R.y - L.y, R.x - L.x)
 
-    // 3) prepare jaw polygon in local coords, adjust top
-    const jawRaw = det.landmarks.getJawOutline()
-    const allPts = det.landmarks.positions
-    const yTopRaw = Math.min(...allPts.map(p => p.y))
-    const jawLocal = jawRaw.map(p => ({
+    // 3) rotate entire frame to deskew
+    rctx.save()
+    rctx.clearRect(0,0, rotatedVideo.width, rotatedVideo.height)
+    rctx.translate(rotatedVideo.width/2, rotatedVideo.height/2)
+    rctx.rotate(-angle)
+    rctx.translate(-rotatedVideo.width/2, -rotatedVideo.height/2)
+    rctx.drawImage(videoFx, 0, 0)
+    rctx.restore()
+
+    // 4) detect on rotated frame
+    const dets2 = await faceapi
+      .detectAllFaces(rotatedVideo, new faceapi.TinyFaceDetectorOptions())
+      .withFaceLandmarks()
+    if (!dets2.length) return
+    const det2 = dets2[0]
+    const { x: fx, y: fy, width: fw, height: fh } = det2.detection.box
+
+    // 5) build jaw polygon local to box
+    const jawRaw = det2.landmarks.getJawOutline()
+    const allPts = det2.landmarks.positions
+    const yTopRaw = Math.min(...allPts.map(p=>p.y))
+    const jawLocal = jawRaw.map(p=>({
       x: p.x - fx,
       y: p.y - fy
     }))
-    // lift endpoints to yTopRaw
     const yTopLocal = yTopRaw - fy
     jawLocal[0].y = yTopLocal
-    jawLocal[jawLocal.length - 1].y = yTopLocal
+    jawLocal[jawLocal.length-1].y = yTopLocal
 
-    // // 4) extract & deskew face following jaw-line
-    // const faceFx = document.createElement('canvas')
-    // faceFx.width  = fw; faceFx.height = fh
-    // const fctx = faceFx.getContext('2d')
-    // fctx.translate(fw/2, fh/2)
-    // fctx.rotate(-angle)
-    // fctx.translate(-fw/2, -fh/2)
-    // // clip to jaw shape
-    // fctx.beginPath()
-    // jawLocal.forEach((pt,i) =>
-    //   i === 0 ? fctx.moveTo(pt.x, pt.y) : fctx.lineTo(pt.x, pt.y)
-    // )
-    // fctx.closePath()
-    // fctx.clip()
-    // // draw the rotated video region
-    // fctx.drawImage(vctx.canvas, fx, fy, fw, fh, 0, 0, fw, fh)
+    // 6) extract face following jaw from rotated frame
+    faceFx.width  = fw
+    faceFx.height = fh
+    fctx.save()
+    fctx.clearRect(0,0,fw,fh)
+    fctx.beginPath()
+    jawLocal.forEach((pt,i)=> i? fctx.lineTo(pt.x,pt.y) : fctx.moveTo(pt.x,pt.y))
+    fctx.closePath()
+    fctx.clip()
+    fctx.drawImage(rotatedVideo, fx, fy, fw, fh, 0, 0, fw, fh)
+    fctx.restore()
 
-    // // 5) blend onto face.png, resize to width=116, center X=100
-    // const targetW = 116
-    // const scaleF = targetW / fw
-    // const targetH = fh * scaleF
-    // // center at x=100 → x0 = 100 - targetW/2
-    // const posX = 100 - targetW/2
-    // // bottom at y=263 → y0 = 263 - targetH
-    // const posY = 263 - targetH
+    // 7) merge with face.png & hair.png
+    const targetW = 116, scaleF = targetW/fw, targetH = fh*scaleF
+    const posX = 100 - targetW/2, posY = 263 - targetH
 
-    // mctx.clearRect(0, 0, mergeFx.width, mergeFx.height)
-    // mctx.drawImage(faceImage, 0, 0)
-    // mctx.drawImage(faceFx, 0, 0, fw, fh, posX, posY, targetW, targetH)
-
-// … inside your setInterval(async () => { … }) loop, replace step 4 & 5 …
-
-// 4) extract & deskew face following jaw-line **with padding**
-const padding = 20  // 20px margin on each side
-const extW = fw + padding * 2
-const extH = fh + padding * 2
-
-const faceFx = document.createElement('canvas')
-faceFx.width  = extW
-faceFx.height = extH
-const fctx = faceFx.getContext('2d')
-
-// center & rotate around the padded canvas center
-fctx.translate(extW/2, extH/2)
-fctx.rotate(-angle)
-fctx.translate(-extW/2, -extH/2)
-
-// map jawLocal (relative to fx,fy) into padded coords
-const jawPadded = jawLocal.map(pt => ({
-  x: pt.x + padding,
-  y: pt.y + padding
-}))
-
-// clip to the padded jaw shape
-// fctx.beginPath()
-// jawPadded.forEach((pt,i) => i===0 ? fctx.moveTo(pt.x,pt.y) : fctx.lineTo(pt.x,pt.y))
-// fctx.closePath()
-// fctx.clip()
-
-// draw the rotated video region into the padded canvas
-fctx.drawImage(
-  vctx.canvas,
-  fx, fy, fw, fh,           // source
-  padding, padding, fw, fh  // dest (inside padding)
-)
-
-// 5) blend **only** the actual face region (no padding) onto face.png
-const targetW = 116
-const scaleF  = targetW / fw
-const targetH = fh * scaleF
-
-// center X at 100 → x0 = 100 - targetW/2
-const posX = 100 - targetW/2
-// bottom at y=263 → y0 = 263 - targetH
-const posY = 263 - targetH
-
-mctx.clearRect(0, 0, mergeFx.width, mergeFx.height)
-mctx.drawImage(faceImage, 0, 0)
-// draw from faceFx’s inner fw×fh region (skipping padding)
-mctx.drawImage(
-  faceFx,
-  padding, padding, fw, fh,  // source
-  posX, posY,                // dest
-  targetW, targetH           // size
-)
-
-// 6) overlay hair.png as before
-mctx.drawImage(hairImage, 0, 0)
-
-
-    // 6) overlay hair.png
+    mctx.clearRect(0,0,mergeFx.width,mergeFx.height)
+    mctx.drawImage(faceImage, 0, 0)
+    mctx.drawImage(faceFx, 0,0, fw,fh, posX,posY, targetW,targetH)
     mctx.drawImage(hairImage, 0, 0)
 
-    // 7) resize merged head into headFx using same Roku scale
-    hctx.clearRect(0, 0, headFx.width, headFx.height)
-    hctx.drawImage(
-      mergeFx,
-      0, 0, mergeFx.width, mergeFx.height,
-      0, 0, bgW, bgH
-    )
+    // 8) draw merged head into headFx (resized by Roku scale)
+    hctx.clearRect(0,0,bgW,bgH)
+    hctx.drawImage(mergeFx, 0,0, mergeFx.width,mergeFx.height, 0,0, bgW,bgH)
 
-    // 8) draw Roku background
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    // 9) draw Roku background on main
+    ctx.clearRect(0,0,canvas.width,canvas.height)
+    const bgX = (video.videoWidth - bgW)/2
+    const bgY = (video.videoHeight - bgH)/2
     ctx.drawImage(rokuImage,
-      0, 0, ROKU_W, ROKU_H,
-      bgX, bgY, bgW, bgH
-    )
+      0,0,ROKU_W,ROKU_H,
+      bgX,bgY,bgW,bgH)
 
-    // 9) rotate final head back by +angle around pivot=(100,245)
-    const pivotX = bgX + 100 * scale
-    const pivotY = bgY + 245 * scale
+    // 10) rotate head back and place pivot at (432,300)
+    const pivotX = bgX + 100*scale
+    const pivotY = bgY + 245*scale
+    const targetPivotX = bgX + 432*scale
+    const targetPivotY = bgY + 300*scale
+
     ctx.save()
     ctx.translate(pivotX, pivotY)
     ctx.rotate(angle)
     ctx.translate(-pivotX, -pivotY)
 
-    // 10) draw headFx so its pivot moves to (432,300)
-    const targetPivotX = bgX + 432 * scale
-    const targetPivotY = bgY + 300 * scale
-    const dx = targetPivotX - pivotX
-    const dy = targetPivotY - pivotY
-    ctx.drawImage(headFx, dx, dy, bgW, bgH)
+    ctx.drawImage(headFx,
+      targetPivotX - pivotX,
+      targetPivotY - pivotY,
+      bgW, bgH
+    )
 
     ctx.restore()
 
