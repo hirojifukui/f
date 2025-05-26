@@ -1,4 +1,4 @@
-// script3.js
+// script6.js
 const video = document.getElementById('video')
 
 // 1) Load your Roku frame
@@ -46,21 +46,36 @@ function onVideoPlaying() {
   offCanvas.height = video.videoHeight
   const offCtx = offCanvas.getContext('2d')
 
+  // match dimensions for face-api
   faceapi.matchDimensions(canvas, {
     width:  video.videoWidth,
     height: video.videoHeight
   })
 
-  // scale Roku to video width
-  const bgScale  = video.videoWidth / rokuImage.width
-  const bgHeight = rokuImage.height * bgScale
+  // original Roku dimensions
+  const origW = rokuImage.width   // 726
+  const origH = rokuImage.height  // 730
 
-  // adjusted face-slot
+  // compute uniform scale to fit within video while preserving aspect ratio
+  const scale = Math.min(
+    video.videoWidth  / origW,
+    video.videoHeight / origH
+  )
+  const bgW = origW * scale
+  const bgH = origH * scale
+
+  // center the Roku frame on the video canvas
+  const bgX = (video.videoWidth  - bgW) / 2
+  const bgY = (video.videoHeight - bgH) / 2
+
+  // define your face-slot relative to the **original** Roku image,
+  // then map it through scale + offset
+  const origSlot = { x: 420, y: 200, w: 140, h: 134 }
   const faceSlot = {
-    x: 420 * bgScale,
-    y: 200 * bgScale,
-    w: 140 * bgScale,
-    h: 134 * bgScale
+    x: origSlot.x * scale + bgX,
+    y: origSlot.y * scale + bgY,
+    w: origSlot.w * scale,
+    h: origSlot.h * scale
   }
 
   setInterval(async () => {
@@ -76,12 +91,12 @@ function onVideoPlaying() {
       height: video.videoHeight
     })
 
-    // draw Roku background
+    // draw the centered, aspect-correct Roku background
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(
       rokuImage,
-      0, 0, rokuImage.width, rokuImage.height,
-      0, 0, video.videoWidth, bgHeight
+      0, 0, origW, origH,      // source
+      bgX, bgY, bgW, bgH       // destination
     )
 
     resized.forEach(det => {
@@ -106,7 +121,7 @@ function onVideoPlaying() {
       jawMapped[0].y = yTopMapped
       jawMapped[jawMapped.length - 1].y = yTopMapped
 
-      // 1) clip to inside jaw
+      // clip to inside jaw
       ctx.save()
       ctx.beginPath()
       ctx.moveTo(jawMapped[0].x, jawMapped[0].y)
@@ -114,7 +129,7 @@ function onVideoPlaying() {
       ctx.closePath()
       ctx.clip()
 
-      // 2) draw face in grayscale
+      // draw face in grayscale
       ctx.save()
       ctx.filter = 'grayscale(100%)'
       ctx.drawImage(
@@ -124,7 +139,7 @@ function onVideoPlaying() {
         faceSlot.w, faceSlot.h
       )
 
-      // 3) tint to target RGB via 'color' blend mode
+      // tint to target RGB via 'color' blend mode
       ctx.filter = 'none'
       ctx.globalCompositeOperation = 'color'
       ctx.fillStyle = 'rgb(158,132,117)'
@@ -133,11 +148,11 @@ function onVideoPlaying() {
         faceSlot.w, faceSlot.h
       )
 
-      // 4) restore composite & filters
+      // restore composite & filters
       ctx.globalCompositeOperation = 'source-over'
       ctx.restore()
 
-      // 5) restore clipping
+      // restore clipping
       ctx.restore()
     })
   }, 100)
