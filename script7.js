@@ -57,7 +57,7 @@ function onVideoPlaying() {
 
   // offscreen: final head before tilt-back
   const ROKU_W = rokuImage.width, ROKU_H = rokuImage.height
-  const scale = Math.min(video.videoWidth/ROKU_W, video.videoHeight/ROKU_H)
+  const scale = Math.min(video.videoWidth/ROKU_W, video.videoHeight/ROKU_H, 1)
   const bgW = ROKU_W*scale, bgH = ROKU_H*scale
   const headFx = document.createElement('canvas')
   headFx.width  = bgW
