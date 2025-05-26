@@ -119,35 +119,95 @@ function onVideoPlaying() {
     jawLocal[0].y = yTopLocal
     jawLocal[jawLocal.length - 1].y = yTopLocal
 
-    // 4) extract & deskew face following jaw-line
-    const faceFx = document.createElement('canvas')
-    faceFx.width  = fw; faceFx.height = fh
-    const fctx = faceFx.getContext('2d')
-    fctx.translate(fw/2, fh/2)
-    fctx.rotate(-angle)
-    fctx.translate(-fw/2, -fh/2)
-    // clip to jaw shape
-    fctx.beginPath()
-    jawLocal.forEach((pt,i) =>
-      i === 0 ? fctx.moveTo(pt.x, pt.y) : fctx.lineTo(pt.x, pt.y)
-    )
-    fctx.closePath()
-    fctx.clip()
-    // draw the rotated video region
-    fctx.drawImage(vctx.canvas, fx, fy, fw, fh, 0, 0, fw, fh)
+    // // 4) extract & deskew face following jaw-line
+    // const faceFx = document.createElement('canvas')
+    // faceFx.width  = fw; faceFx.height = fh
+    // const fctx = faceFx.getContext('2d')
+    // fctx.translate(fw/2, fh/2)
+    // fctx.rotate(-angle)
+    // fctx.translate(-fw/2, -fh/2)
+    // // clip to jaw shape
+    // fctx.beginPath()
+    // jawLocal.forEach((pt,i) =>
+    //   i === 0 ? fctx.moveTo(pt.x, pt.y) : fctx.lineTo(pt.x, pt.y)
+    // )
+    // fctx.closePath()
+    // fctx.clip()
+    // // draw the rotated video region
+    // fctx.drawImage(vctx.canvas, fx, fy, fw, fh, 0, 0, fw, fh)
 
-    // 5) blend onto face.png, resize to width=116, center X=100
-    const targetW = 116
-    const scaleF = targetW / fw
-    const targetH = fh * scaleF
-    // center at x=100 → x0 = 100 - targetW/2
-    const posX = 100 - targetW/2
-    // bottom at y=263 → y0 = 263 - targetH
-    const posY = 263 - targetH
+    // // 5) blend onto face.png, resize to width=116, center X=100
+    // const targetW = 116
+    // const scaleF = targetW / fw
+    // const targetH = fh * scaleF
+    // // center at x=100 → x0 = 100 - targetW/2
+    // const posX = 100 - targetW/2
+    // // bottom at y=263 → y0 = 263 - targetH
+    // const posY = 263 - targetH
 
-    mctx.clearRect(0, 0, mergeFx.width, mergeFx.height)
-    mctx.drawImage(faceImage, 0, 0)
-    mctx.drawImage(faceFx, 0, 0, fw, fh, posX, posY, targetW, targetH)
+    // mctx.clearRect(0, 0, mergeFx.width, mergeFx.height)
+    // mctx.drawImage(faceImage, 0, 0)
+    // mctx.drawImage(faceFx, 0, 0, fw, fh, posX, posY, targetW, targetH)
+
+// … inside your setInterval(async () => { … }) loop, replace step 4 & 5 …
+
+// 4) extract & deskew face following jaw-line **with padding**
+const padding = 20  // 20px margin on each side
+const extW = fw + padding * 2
+const extH = fh + padding * 2
+
+const faceFx = document.createElement('canvas')
+faceFx.width  = extW
+faceFx.height = extH
+const fctx = faceFx.getContext('2d')
+
+// center & rotate around the padded canvas center
+fctx.translate(extW/2, extH/2)
+fctx.rotate(-angle)
+fctx.translate(-extW/2, -extH/2)
+
+// map jawLocal (relative to fx,fy) into padded coords
+const jawPadded = jawLocal.map(pt => ({
+  x: pt.x + padding,
+  y: pt.y + padding
+}))
+
+// clip to the padded jaw shape
+fctx.beginPath()
+jawPadded.forEach((pt,i) => i===0 ? fctx.moveTo(pt.x,pt.y) : fctx.lineTo(pt.x,pt.y))
+fctx.closePath()
+fctx.clip()
+
+// draw the rotated video region into the padded canvas
+fctx.drawImage(
+  vctx.canvas,
+  fx, fy, fw, fh,           // source
+  padding, padding, fw, fh  // dest (inside padding)
+)
+
+// 5) blend **only** the actual face region (no padding) onto face.png
+const targetW = 116
+const scaleF  = targetW / fw
+const targetH = fh * scaleF
+
+// center X at 100 → x0 = 100 - targetW/2
+const posX = 100 - targetW/2
+// bottom at y=263 → y0 = 263 - targetH
+const posY = 263 - targetH
+
+mctx.clearRect(0, 0, mergeFx.width, mergeFx.height)
+mctx.drawImage(faceImage, 0, 0)
+// draw from faceFx’s inner fw×fh region (skipping padding)
+mctx.drawImage(
+  faceFx,
+  padding, padding, fw, fh,  // source
+  posX, posY,                // dest
+  targetW, targetH           // size
+)
+
+// 6) overlay hair.png as before
+mctx.drawImage(hairImage, 0, 0)
+
 
     // 6) overlay hair.png
     mctx.drawImage(hairImage, 0, 0)
