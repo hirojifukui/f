@@ -81,13 +81,13 @@
       let y  = (canvas.height - yukiImg.height) / 2;
       let vx = (Math.random()*2 - 1) * 0.5;
       let vy = (Math.random()*2 - 1) * 0.5;
-      const maxSpeed = 3;
+      const maxSpeed = 10;
 
       function startLoop() {
         async function loop() {
           // 1) get person mask
           const seg = await net.segmentPerson(video, {
-            internalResolution: 'low',
+            internalResolution: 'medium',
             segmentationThreshold: 0.5
           });
           const mask = bodyPix.toMask(seg);
@@ -99,6 +99,7 @@
 
           // 3) draw moving yuki
           ctx.drawImage(yukiImg, x, y);
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);    
 
           // 4) cut out person (destination-out)
           ctx.globalCompositeOperation = 'destination-in';
@@ -106,8 +107,8 @@
           ctx.globalCompositeOperation = 'source-over';
 
           // 5) update yuki velocity & position
-          vx += (Math.random() - 0.5) * 1;
-          vy += (Math.random() - 0.5) * 1;
+          vx += (Math.random() - 0.5) * 10;
+          vy += (Math.random() - 0.5) * 10;
           let speed = Math.hypot(vx, vy);
           if (speed > maxSpeed) {
             vx = (vx/speed) * maxSpeed;
