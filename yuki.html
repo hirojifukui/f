@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>BodyPix Background Replacement</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BodyPix Black Background</title>
   <style>
     /* make the canvas fill the viewport and show black behind transparent pixels */
     body, html { margin:0; padding:0; overflow:hidden; height:100%; }
@@ -10,19 +11,18 @@
       display: block;
       width: 100vw;
       height: 100vh;
-      background-color: black;
+      background-color: black;    /* black shows through any transparent pixels */
       object-fit: cover;
     }
+    video { display: none; }       /* hide the raw video element */
   </style>
-  <!-- load TensorFlow.js and the BodyPix model -->
+  <!-- Load TF.js and BodyPix -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
 </head>
 <body>
-  <!-- hidden video element to hold the camera feed -->
-  <video id="video" autoplay playsinline style="display:none;"></video>
-  <!-- visible canvas where we’ll draw the person on black -->
-  <canvas id="output"></canvas>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
 
   <script>
     async function setupCamera() {
@@ -40,50 +40,54 @@
     }
 
     async function main() {
-      // 1) Start the camera
+      // 1) start camera
       const video = await setupCamera();
 
-      // 2) Prepare our canvas
-      const canvas = document.getElementById('output');
+      // 2) prepare our visible canvas
+      const canvas = document.getElementById('canvas');
       canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
+      const ctx      = canvas.getContext('2d');
 
-      // 3) Offscreen canvas for the mask
+      // 3) an offscreen canvas to hold the mask
       const maskCanvas = document.createElement('canvas');
       maskCanvas.width  = canvas.width;
       maskCanvas.height = canvas.height;
-      const maskCtx = maskCanvas.getContext('2d');
+      const maskCtx    = maskCanvas.getContext('2d');
 
-      // 4) Load BodyPix model (MobileNetV1 small, for speed on mobile)
+      // 4) load the BodyPix model (MobileNetV1 0.75 for mobile) :contentReference[oaicite:0]{index=0}
       const net = await bodyPix.load({
         architecture: 'MobileNetV1',
         outputStride: 16,
         multiplier: 0.75,
       });
 
-      // 5) Render loop
+      // 5) the render loop
       async function renderFrame() {
-        // a) draw the raw video frame
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // b) run person segmentation
+        // a) run segmentation
         const segmentation = await net.segmentPerson(video, {
-          internalResolution: 'medium',
-          segmentationThreshold: 0.7
+          internalResolution: 'low',
+          segmentationThreshold: 0.5    // lower threshold helps mobile detect more reliably
         });
 
-        // c) convert segmentation to an RGBA mask
-        const maskImage = bodyPix.toMask(segmentation);
+        // b) convert to an RGBA mask where: background → transparent, person → opaque
+        //    toMask(segmentation, maskBackgroundValue, maskForegroundValue) :contentReference[oaicite:1]{index=1}
+        const mask = bodyPix.toMask(
+          segmentation,
+          { r: 0, g: 0, b: 0, a: 0 },    // background pixels become fully transparent
+          { r: 0, g: 0, b: 0, a: 255 }   // person pixels become fully opaque (color not used)
+        );
+        maskCtx.putImageData(mask, 0, 0);
 
-        // d) paint mask into the offscreen canvas
-        maskCtx.putImageData(maskImage, 0, 0);
+        // c) draw the live video frame
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // e) use the mask to keep **only** the person pixels
+        // d) mask out everything but the person
         ctx.globalCompositeOperation = 'destination-in';
         ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
 
-        // f) reset composite for next frame
+        // e) reset for next frame
         ctx.globalCompositeOperation = 'source-over';
 
         requestAnimationFrame(renderFrame);
