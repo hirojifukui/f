@@ -71,13 +71,14 @@
       async function renderFrame() {
         // 1) get the binary segmentation mask
         const segmentation = await net.segmentPerson(video, {
-          internalResolution: 'low',
+          internalResolution: 'medium',
           segmentationThreshold: 0.5,
         });
         const rawMask = bodyPix.toMask(segmentation);
         maskCtx.putImageData(rawMask, 0, 0);
 
         // 2) blur the mask for a soft edge
+        maskCtx.filter = 'blur(30px)';
         maskCtx.filter = 'blur(20px)';
         maskCtx.drawImage(maskCanvas, 0, 0);
         maskCtx.filter = 'none';
@@ -88,7 +89,7 @@
 
         // 4) composite: keep only the person, at up to 0.8 opacity
         ctx.globalCompositeOperation = 'destination-out';
-        ctx.globalAlpha = 0.8;
+        ctx.globalAlpha = 1;
         ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
 
         // 5) reset
