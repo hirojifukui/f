@@ -171,8 +171,8 @@ function onVideoPlaying() {
     const pivotFaceY = 245
     const pivotX = bgX + pivotFaceX*scale
     const pivotY = bgY + pivotFaceY*scale
-    const dx = targetPivotX - pivotX
-    const dy = targetPivotY - pivotY
+    // const dx = targetPivotX - pivotX
+    // const dy = targetPivotY - pivotY
 
     ctx.save()
     ctx.translate(pivotX, pivotY)
