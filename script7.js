@@ -173,10 +173,10 @@ const jawPadded = jawLocal.map(pt => ({
 }))
 
 // clip to the padded jaw shape
-fctx.beginPath()
-jawPadded.forEach((pt,i) => i===0 ? fctx.moveTo(pt.x,pt.y) : fctx.lineTo(pt.x,pt.y))
-fctx.closePath()
-fctx.clip()
+// fctx.beginPath()
+// jawPadded.forEach((pt,i) => i===0 ? fctx.moveTo(pt.x,pt.y) : fctx.lineTo(pt.x,pt.y))
+// fctx.closePath()
+// fctx.clip()
 
 // draw the rotated video region into the padded canvas
 fctx.drawImage(
