@@ -147,8 +147,8 @@ function onVideoPlaying() {
 
     // 2) 眉ライン座標を取得（landmarks は face-api の結果）
     const browPts = [
-    det2.landmarks.getLeftEyeBrow(),
-    det2.landmarks.getRightEyeBrow()
+       ...det2.landmarks.getLeftEyeBrow(),
+       ...det2.landmarks.getRightEyeBrow()
     ]
     const yBrow = Math.min(...browPts.map(p => p.y)) - fy  // faceFx のローカル y
 
