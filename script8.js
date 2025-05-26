@@ -193,15 +193,15 @@ function onVideoPlaying() {
     const posX    = 100 - targetW/2
     const posY    = 265 - targetH
 
-    mergeCtx.clearRect(0, 0, mergeFx.width, mergeFx.height)
-    mergeCtx.drawImage(faceImage, 0, 0)
-    mergeCtx.drawImage(
+    mctx.clearRect(0, 0, mergeFx.width, mergeFx.height)
+    mctx.drawImage(faceImage, 0, 0)
+    mctx.drawImage(
     maskCanvas,      // <-- use your maskCanvas now
     0, 0, fw, fh,    // source
     posX, posY,      // dest
     targetW, targetH // size
     )
-    mergeCtx.drawImage(hairImage, 0, 0)
+    mctx.drawImage(hairImage, 0, 0)
 
 // … then continue with the rest of your head/hctx/roku draw logic …
 
