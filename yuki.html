@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BodyPix Transparent Background</title>
+  <title>BodyPix with Fubuki Background</title>
   <style>
-    /* full-screen transparent canvas */
+    /* full-screen canvas */
     body, html { margin:0; padding:0; overflow:hidden; height:100%; }
     canvas {
       display: block;
       width: 100vw;
       height: 100vh;
-      background: transparent;    /* no solid fill */
+      background: transparent;
       object-fit: cover;
     }
     video { display: none; }
@@ -26,6 +26,10 @@
   <canvas id="canvas"></canvas>
 
   <script>
+    // 1) Preload your background image
+    const bgImg = new Image();
+    bgImg.src = 'fubuki.jpg';  // make sure fubuki.jpg is served alongside this HTML
+
     async function setupCamera() {
       const video = document.getElementById('video');
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -35,56 +39,64 @@
       return new Promise(res => video.onloadedmetadata = () => (video.play(), res(video)));
     }
 
-    async function main() {
+    // 2) Main entrypoint runs after bgImg loads
+    bgImg.onload = async () => {
       const video = await setupCamera();
       const canvas = document.getElementById('canvas');
       canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
       const ctx      = canvas.getContext('2d');
 
-      // offscreen mask canvas
+      // offscreen canvas for mask
       const maskCanvas = document.createElement('canvas');
       maskCanvas.width  = canvas.width;
       maskCanvas.height = canvas.height;
       const maskCtx    = maskCanvas.getContext('2d');
 
-      // load BodyPix
+      // Load BodyPix (MobileNetV1 0.75 for mobile)
       const net = await bodyPix.load({
         architecture: 'MobileNetV1',
         outputStride: 16,
         multiplier: 0.75,
       });
 
+      // 3) Render loop
       async function renderFrame() {
-        // 1) segment the person
+        // a) segment the person
         const segmentation = await net.segmentPerson(video, {
           internalResolution: 'low',
           segmentationThreshold: 0.5
         });
 
-        // 2) turn it into an RGBA mask
-        const mask = bodyPix.toMask(segmentation);
+        // b) create RGBA mask (transparent background, opaque person)
+        const mask = bodyPix.toMask(
+          segmentation,
+          { r: 0, g: 0, b: 0, a: 0 },    // background → transparent
+          { r: 0, g: 0, b: 0, a: 255 }   // person → opaque
+        );
         maskCtx.putImageData(mask, 0, 0);
 
-        // 3) clear and draw the mask first
+        // c) clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // d) draw your fubuki.jpg background
+        ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+
+        // e) draw the mask
         ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
 
-        // 4) use 'source-in' to paint video only where mask is opaque
+        // f) composite: keep only video where mask is opaque
         ctx.globalCompositeOperation = 'source-in';
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // 5) restore for next frame
+        // g) reset composite mode
         ctx.globalCompositeOperation = 'source-over';
 
         requestAnimationFrame(renderFrame);
       }
 
       renderFrame();
-    }
-
-    main().catch(console.error);
+    };
   </script>
 </body>
 </html>
-
