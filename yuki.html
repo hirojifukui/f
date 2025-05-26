@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BodyPix Fubuki Background</title>
+  <title>BodyPix Cut-Out over Fubuki</title>
   <style>
-    /* full-screen container with fubuki.jpg behind */
+    /* Full-screen container: fubuki.jpg as background */
     body, html { margin:0; padding:0; height:100%; }
     #container {
       position: relative;
       width: 100vw;
       height: 100vh;
       background: url('fubuki.jpg') center/cover no-repeat;
+      overflow: hidden;
     }
-    /* transparent canvas on top for the cut-out person */
+    /* Transparent canvas on top for the person cut-out */
     canvas {
       position: absolute;
       top: 0; left: 0;
@@ -22,12 +23,10 @@
       background: transparent;
       object-fit: cover;
     }
-    /* hide the raw video element */
-    video {
-      display: none;
-    }
+    /* Hide the raw video element */
+    video { display: none; }
   </style>
-  <!-- load TF.js & BodyPix -->
+  <!-- Load TensorFlow.js & BodyPix -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
 </head>
@@ -41,66 +40,60 @@
     async function setupCamera() {
       const video = document.getElementById('video');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false
+        video: { facingMode: 'environment' }, audio: false
       });
       video.srcObject = stream;
-      return new Promise(res => {
+      return new Promise(resolve => {
         video.onloadedmetadata = () => {
           video.play();
-          res(video);
+          resolve(video);
         };
       });
     }
 
     async function main() {
-      // 1) start camera
-      const video = await setupCamera();
-
-      // 2) size our visible canvas
+      const video  = await setupCamera();
       const canvas = document.getElementById('canvas');
+      const ctx    = canvas.getContext('2d');
+
+      // Match canvas size to video
       canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
 
-      // 3) offscreen canvas just for the mask
+      // Offscreen canvas for the binary mask
       const maskCanvas = document.createElement('canvas');
       maskCanvas.width  = canvas.width;
       maskCanvas.height = canvas.height;
-      const maskCtx = maskCanvas.getContext('2d');
+      const maskCtx    = maskCanvas.getContext('2d');
 
-      // 4) load BodyPix (MobileNetV1 0.75 for mobile) 
+      // Load a lightweight BodyPix model
       const net = await bodyPix.load({
         architecture: 'MobileNetV1',
         outputStride: 16,
         multiplier: 0.75,
       });
 
-      // 5) render loop
       async function renderFrame() {
-        // a) segment the person
+        // 1) Segment the person
         const segmentation = await net.segmentPerson(video, {
           internalResolution: 'low',
-          segmentationThreshold: 0.5
+          segmentationThreshold: 0.5,
         });
 
-        // b) make an RGBA mask: transparent background, opaque person
-        const mask = bodyPix.toMask(
-          segmentation,
-          { r: 0, g: 0, b: 0, a: 0 },    // background → fully transparent
-          { r: 0, g: 0, b: 0, a: 255 }   // person   → fully opaque
-        );
+        // 2) Turn segmentation into an RGBA mask:
+        //    background → transparent, person → opaque
+        const mask = bodyPix.toMask(segmentation);
         maskCtx.putImageData(mask, 0, 0);
 
-        // c) clear & draw the live video frame
+        // 3) Draw the video frame
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // d) keep only the person pixels
+        // 4) Invert mask effect: keep only person pixels
         ctx.globalCompositeOperation = 'destination-in';
         ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
 
-        // e) reset for next frame
+        // 5) Reset composite mode for next pass
         ctx.globalCompositeOperation = 'source-over';
 
         requestAnimationFrame(renderFrame);
