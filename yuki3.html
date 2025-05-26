@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Static Blizzard + Moving Yuki + BodyPix Mask</title>
+  <title>Static Blizzard1 + Moving Yuki + Flipped Front Camera + BodyPix Mask</title>
   <style>
     html, body { margin:0; padding:0; height:100%; overflow:hidden; }
     #container { position: relative; width:100vw; height:100vh; }
@@ -13,7 +13,7 @@
       width:100%; height:100%;
       object-fit: cover;
       z-index: 0;
-      transform: scaleX(-1);
+      transform: scaleX(-1); /* flip video left-right */
     }
     /* canvas on top */
     canvas {
@@ -37,7 +37,8 @@
     async function setupCamera() {
       const video = document.getElementById('video');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' }, audio: false
+        video: { facingMode: 'user' }, // front camera
+        audio: false
       });
       video.srcObject = stream;
       return new Promise(res => {
@@ -65,8 +66,8 @@
       function onLoad() {
         if (++loaded === 2) startLoop();
       }
-      bgImg.src   = 'blizzard1.png'; bgImg.onload   = onLoad;
-      yukiImg.src = 'yuki.png';    yukiImg.onload = onLoad;
+      bgImg.src   = 'blizzard1.png'; bgImg.onload   = onLoad; // updated to blizzard1.png
+      yukiImg.src = 'yuki.png';     yukiImg.onload = onLoad;
 
       // Load BodyPix
       const net = await bodyPix.load({
