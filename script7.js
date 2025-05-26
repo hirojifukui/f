@@ -172,8 +172,8 @@ function onVideoPlaying() {
     const pivotFaceY = 263
 
     // where that pivot should land on Roku:
-    const destFaceX = 432
-    const destFaceY = 300
+    const destFaceX = 493
+    const destFaceY = 326
 
     // map both through the same scale + bg offset
     const pivotHeadX = pivotFaceX * scale
