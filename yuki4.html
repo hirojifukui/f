@@ -131,8 +131,8 @@
 
         // 6) compute Yuki2 scale: ratio = 220 / headH
         const ratio   = headH > 0 ? 220 / headH : 1;
-        const yW      = yukiImg.width  * ratio;
-        const yH      = yukiImg.height * ratio;
+        const yW      = yukiImg.width  / ratio;
+        const yH      = yukiImg.height / ratio;
 
         // 7) decide side: room on left vs right
         const leftRoom  = minX;
