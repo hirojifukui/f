@@ -140,9 +140,9 @@
         videoCtx.globalCompositeOperation = 'source-over';
 
         // 6) compute yuki2 size & decide side
-        const scale  = headH>0 ? 220/headH : 1;
-        const yW     = yukiImg.width  * scale;
-        const yH     = yukiImg.height * scale;
+        const scale  = headH>0 ? 600/headH : 3;
+        const yW     = yukiImg.width  / scale;
+        const yH     = yukiImg.height / scale;
         const leftSpace  = minX;
         const rightSpace = W - maxX;
         const placeRight = rightSpace >= leftSpace;
@@ -151,7 +151,7 @@
           ? (maxX + 100)
           : (minX - 100);
         const drawX = centerX - yW/2;
-        const drawY = headCY   - yH/2;
+        const drawY = headCY   - yH/2+150;
 
         // 7) final composite on main canvas
         ctx.clearRect(0,0,W,H);
