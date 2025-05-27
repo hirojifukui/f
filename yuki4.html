@@ -149,7 +149,10 @@
         ctx.clearRect(0,0,W,H);
 
         // a) draw Yuki2
-        ctx.drawImage(yukiImg, drawX, drawY, yW, yH);
+        if (headH > 15){
+            ctx.drawImage(yukiImg, drawX, drawY, yW, yH);
+        }
+        
 
         // b) draw masked body video
         ctx.drawImage(videoCanvas, 0,0,W,H);
