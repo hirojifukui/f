@@ -3,30 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BodyPix Full-Body Mask + Yuki by Head</title>
+  <title>BodyPix + Yuki2 Next to Head</title>
   <style>
     body, html { margin:0; padding:0; height:100%; }
     #container {
       position: relative;
       width: 100vw;
       height: 100vh;
-      /* static blizzard1 background */
       background: url('blizzard1.png') center/cover no-repeat;
       overflow: hidden;
     }
-    /* our compositing canvas */
     canvas {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%;
-      height: 100%;
+      top:0; left:0;
+      width: 100%; height: 100%;
       object-fit: cover;
       background: transparent;
     }
-    /* hide the raw video element */
     video { display: none; }
   </style>
-  <!-- TF.js & BodyPix -->
+  <!-- TensorFlow.js & BodyPix -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
 </head>
@@ -37,7 +33,7 @@
   </div>
 
   <script>
-    // Part IDs for left/right face in BodyPix
+    // Face part IDs for left/right face
     const HEAD_PART_IDS = [0, 1];
 
     async function setupCamera() {
@@ -62,7 +58,7 @@
       canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
 
-      // Offscreen canvases
+      // offscreen canvases
       const maskCanvas  = document.createElement('canvas');
       const videoCanvas = document.createElement('canvas');
       [maskCanvas, videoCanvas].forEach(c => {
@@ -72,83 +68,90 @@
       const maskCtx  = maskCanvas.getContext('2d');
       const videoCtx = videoCanvas.getContext('2d');
 
-      // Load Yuki overlay
+      // load yuki2.png
       const yukiImg = new Image();
       await new Promise(res => {
         yukiImg.onload = res;
-        yukiImg.src    = 'yuki.png';
+        yukiImg.src    = 'yuki2.png';
       });
 
-      // Load BodyPix
+      // load BodyPix
       const net = await bodyPix.load({
         architecture: 'MobileNetV1',
         outputStride:   16,
-        multiplier:     0.75,
+        multiplier:     0.75
       });
 
       async function renderFrame() {
-        const width  = canvas.width,
-              height = canvas.height;
+        const W = canvas.width, H = canvas.height;
 
-        // 1) get part-level segmentation (for head measurement & full-body mask)
+        // 1) part-level segmentation
         const parts = await net.segmentPersonParts(video, {
           internalResolution: 'medium',
           segmentationThreshold: 0.5
         });
         const data = parts.data;
 
-        // 2) compute head bounding box (IDs 0 & 1)
-        let minX = width, minY = height, maxX = 0, maxY = 0;
+        // 2) compute head bounding box
+        let minX = W, minY = H, maxX = 0, maxY = 0;
         for (let i = 0; i < data.length; i++) {
           if (HEAD_PART_IDS.includes(data[i])) {
-            const x = i % width;
-            const y = Math.floor(i / width);
+            const x = i % W, y = Math.floor(i / W);
             if (x < minX) minX = x;
             if (y < minY) minY = y;
             if (x > maxX) maxX = x;
             if (y > maxY) maxY = y;
           }
         }
-        // fallback if head not found
         if (maxX < minX) { minX = maxX = 0; }
         if (maxY < minY) { minY = maxY = 0; }
-
-        const headW = maxX - minX + 1;
-        const headH = maxY - minY + 1;
+        const headW  = maxX - minX + 1;
+        const headH  = maxY - minY + 1;
         const headCY = minY + headH/2;
 
-        // 3) build a full-body RGBA mask: partId >= 0 is body
-        const maskImage = maskCtx.createImageData(width, height);
+        // 3) full-body mask (partId >= 0)
+        const maskImage = maskCtx.createImageData(W, H);
         for (let i = 0; i < data.length; i++) {
-          // background in segmentationParts is -1
-          const isBody = data[i] >= 0;
-          maskImage.data[4*i + 3] = isBody ? 255 : 0;
+          maskImage.data[4*i + 3] = data[i] >= 0 ? 255 : 0;
         }
-        maskCtx.clearRect(0, 0, width, height);
+        maskCtx.clearRect(0, 0, W, H);
         maskCtx.putImageData(maskImage, 0, 0);
 
-        // 4) blur the mask for soft edges
+        // 4) blur the mask
         maskCtx.filter = 'blur(20px)';
         maskCtx.drawImage(maskCanvas, 0, 0);
         maskCtx.filter = 'none';
 
-        // 5) draw & keep only the body in videoCanvas
-        videoCtx.clearRect(0, 0, width, height);
-        videoCtx.drawImage(video, 0, 0, width, height);
+        // 5) draw & mask video onto videoCanvas
+        videoCtx.clearRect(0,0,W,H);
+        videoCtx.drawImage(video, 0,0,W,H);
         videoCtx.globalCompositeOperation = 'destination-in';
-        videoCtx.drawImage(maskCanvas, 0, 0, width, height);
+        videoCtx.drawImage(maskCanvas, 0,0,W,H);
         videoCtx.globalCompositeOperation = 'source-over';
 
-        // 6) final composite
-        ctx.clearRect(0, 0, width, height);
+        // 6) compute Yuki2 scale: ratio = 220 / headH
+        const ratio   = headH > 0 ? 220 / headH : 1;
+        const yW      = yukiImg.width  * ratio;
+        const yH      = yukiImg.height * ratio;
 
-        //   a) draw Yuki so its left edge sits at the head's right edge
-        const yX = maxX;
-        const yY = headCY - (yukiImg.height / 2);
-        ctx.drawImage(yukiImg, yX, yY);
+        // 7) decide side: room on left vs right
+        const leftRoom  = minX;
+        const rightRoom = W - maxX;
+        const centerX   = leftRoom > rightRoom
+          ? (minX - 100)   // place left of head
+          : (maxX + 100);  // place right of head
 
-        //   b) draw the body-only video on top
-        ctx.drawImage(videoCanvas, 0, 0, width, height);
+        const drawX = centerX - yW/2;
+        const drawY = headCY   - yH/2;
+
+        // 8) final composite
+        ctx.clearRect(0,0,W,H);
+
+        // a) draw Yuki2
+        ctx.drawImage(yukiImg, drawX, drawY, yW, yH);
+
+        // b) draw masked body video
+        ctx.drawImage(videoCanvas, 0,0,W,H);
 
         requestAnimationFrame(renderFrame);
       }
