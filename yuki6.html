@@ -55,19 +55,19 @@
       fullScreen: { enable: false },
       fpsLimit: 60,
       particles: {
-        number: { value: 300, density: { enable: true, area: 800 } },
+        number: { value: 200, density: { enable: true, area: 800 } },
         color: { value: "#ffffff" },
         shape: { type: "circle" },
         opacity: {
           value: { min: 0.5, max: 0.8 },
-          animation: { enable: true, speed: 2, minimumValue: 0.4 }
+          animation: { enable: true, speed: 10, minimumValue: 0.4 }
         },
         size: {
           value: { min: 1, max: 4 },
           random: true
         },
         move: {
-          direction: "right",
+          direction: "bottomright",
           enable: true,
           speed: 30,
           straight: true,
