@@ -145,14 +145,16 @@
       requestAnimationFrame(renderFrame);
     }
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        main().catch(console.error);
-      });
-    } else {
-      main().catch(console.error);
-    }
-  }
+    // if (document.readyState === 'loading') {
+    //   document.addEventListener('DOMContentLoaded', () => {
+    //     main().catch(console.error);
+    //   });
+    // } else {
+//       main().catch(console.error);
+//     }
+ }
 
   main().catch(console.error);
 </script>
+</body>
+</html>
