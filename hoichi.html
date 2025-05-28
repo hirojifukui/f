@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BodyPix + Head Overlay</title>
+  <style>
+    body, html { margin:0; padding:0; height:100%; }
+    #container {
+      position: relative;
+      width:100vw; height:100vh;
+      background: url('tera.jpg') center/cover no-repeat;
+      overflow:hidden;
+    }
+    canvas {
+      position:absolute; top:0; left:0;
+      width:100%; height:100%;
+      object-fit: contain;
+      object-position: center;
+      background: transparent;
+    }
+    video { display:none; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
+</head>
+<body>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script>
+    const HEAD_PART_IDS = [0,1];  // left/right face
+
+    async function setupCamera() {
+      const video = document.getElementById('video');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode:'user' }, audio:false
+      });
+      video.srcObject = stream;
+      return new Promise(res => {
+        video.onloadedmetadata = () => { video.play(); res(video); };
+      });
+    }
+
+    async function main() {
+      const video  = await setupCamera();
+      const canvas = document.getElementById('canvas');
+      const ctx    = canvas.getContext('2d');
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const W = canvas.width, H = canvas.height;
+
+      // Offscreen canvases
+      const bodyMaskCanvas = document.createElement('canvas');
+      const videoCanvas    = document.createElement('canvas');
+      const headMaskCanvas = document.createElement('canvas');
+      [bodyMaskCanvas, videoCanvas, headMaskCanvas].forEach(c => {
+        c.width = W; c.height = H;
+      });
+      const bodyMaskCtx = bodyMaskCanvas.getContext('2d');
+      const videoCtx    = videoCanvas.getContext('2d');
+      const headMaskCtx = headMaskCanvas.getContext('2d');
+
+      // Load okyo.png
+      const okyoImg = new Image();
+      await new Promise(res => {
+        okyoImg.onload = res;
+        okyoImg.src   = 'okyo.png';
+      });
+
+      // Load BodyPix
+      const net = await bodyPix.load({
+        architecture: 'MobileNetV1',
+        outputStride: 16,
+        multiplier: 0.75
+      });
+
+      async function renderFrame() {
+        // 1) Part‐level segmentation
+        const parts = await net.segmentPersonParts(video, {
+          internalResolution: 'medium',
+          segmentationThreshold: 0.5
+        });
+        const data = parts.data;
+
+        // 2) Compute head‐centroid (and also bounding box for scale)
+        let minY=H, maxY=0, sumX=0, sumY=0, count=0;
+        for (let i=0; i<data.length; i++) {
+          if (HEAD_PART_IDS.includes(data[i])) {
+            const x = i % W, y = (i/W)|0;
+            sumX += x; sumY += y; count++;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+        const headH = (maxY - minY + 1) || 1;
+        const headCX = sumX/count;
+        const headCY = sumY/count;
+
+        // 3) Build full‐body mask
+        const bodyMaskImage = bodyMaskCtx.createImageData(W,H);
+        for (let i=0; i<data.length; i++) {
+          bodyMaskImage.data[4*i + 3] = (data[i]>=0 ? 255:0);
+        }
+        bodyMaskCtx.clearRect(0,0,W,H);
+        bodyMaskCtx.putImageData(bodyMaskImage, 0,0);
+        bodyMaskCtx.filter = 'blur(20px)';
+        bodyMaskCtx.drawImage(bodyMaskCanvas,0,0);
+        bodyMaskCtx.filter = 'none';
+
+        // 4) Draw+keep only body in videoCanvas
+        videoCtx.clearRect(0,0,W,H);
+        videoCtx.drawImage(video,0,0,W,H);
+        videoCtx.globalCompositeOperation = 'destination-in';
+        videoCtx.drawImage(bodyMaskCanvas,0,0);
+        videoCtx.globalCompositeOperation = 'source-over';
+
+        // 5) Build head‐only mask
+        const headMaskImage = headMaskCtx.createImageData(W,H);
+        for (let i=0; i<data.length; i++) {
+          if (HEAD_PART_IDS.includes(data[i])) {
+            headMaskImage.data[4*i + 3] = 255;
+          }
+        }
+        headMaskCtx.clearRect(0,0,W,H);
+        headMaskCtx.putImageData(headMaskImage, 0,0);
+        headMaskCtx.filter = 'blur(10px)';
+        headMaskCtx.drawImage(headMaskCanvas,0,0);
+        headMaskCtx.filter = 'none';
+
+        // 6) Draw okyo.png into headMaskCanvas, then clip to head shape
+        //    scale so okyo height ~600px in original video coords
+        const scale = 600 / headH;
+        const w = okyoImg.width / scale;
+        const h = okyoImg.height / scale;
+        headMaskCtx.clearRect(0,0,W,H);
+        headMaskCtx.drawImage(okyoImg, headCX - w/2, headCY - h/2, w, h);
+        headMaskCtx.globalCompositeOperation = 'destination-in';
+        headMaskCtx.drawImage(headMaskCanvas,0,0);
+        headMaskCtx.globalCompositeOperation = 'source-over';
+
+        // 7) Composite everything
+        ctx.clearRect(0,0,W,H);
+        // a) masked okyo only within head
+        ctx.drawImage(headMaskCanvas,0,0);
+        // b) the rest of the (blurred) body
+        ctx.drawImage(videoCanvas,0,0,W,H);
+
+        requestAnimationFrame(renderFrame);
+      }
+
+      renderFrame();
+    }
+
+    main().catch(console.error);
+  </script>
+</body>
+</html>
